@@ -7,7 +7,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { priceForSeatId } from "@/lib/pool/seat-pricing";
 import { Seat } from "./seat";
+import { SeatPricingLegend } from "./seat-pricing-legend";
 
 const MAP_W = 704;
 const PLAN_H = 892;
@@ -16,13 +18,6 @@ const SCALE_MIN = 0.5;
 const SCALE_MAX = 2;
 const SCALE_STEP = 0.1;
 const DRAG_THRESHOLD_PX = 5;
-
-const S2_GREY = new Set([
-  36, 37, 44, 58, 59, 72, 73, 81, 82, 95, 96, 105, 106,
-]);
-const S3_GREY = new Set([
-  124, 125, 134, 135, 148, 149, 158, 159, 168, 169,
-]);
 
 function range(a: number, b: number): number[] {
   const out: number[] = [];
@@ -81,14 +76,27 @@ type PoolMapProps = {
   wideLayout?: boolean;
   /** Світлий «курортний» хром панелі масштабу та рамки огляду */
   resortChrome?: boolean;
+  /** Вибрані місця (ключ — id місця). Батько тримає `{}` за замовчуванням. */
+  selectedSeats: Record<string, boolean>;
+  onSeatToggle: (seatId: string) => void;
+  /** Підтверджені заявки з БД (ключ — id місця). */
+  bookedSeatIds?: Record<string, boolean>;
+  /** Чернетка іншого клієнта (WebSocket). */
+  remoteDraftSeatIds?: Record<string, boolean>;
+  /** Підказки в легенді: заброньовано / хтось обирає. */
+  showOccupancyLegend?: boolean;
 };
 
 export function PoolMap({
   className = "",
   wideLayout = false,
   resortChrome = false,
+  selectedSeats,
+  onSeatToggle,
+  bookedSeatIds = {},
+  remoteDraftSeatIds = {},
+  showOccupancyLegend = false,
 }: PoolMapProps) {
-  const [booked, setBooked] = useState<Record<string, boolean>>({});
   const [scale, setScale] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -104,22 +112,12 @@ export function PoolMap({
 
   const viewportRef = useRef<HTMLDivElement>(null);
 
-  const toggle = useCallback((id: string) => {
-    setBooked((prev) => ({ ...prev, [id]: !prev[id] }));
-  }, []);
-
   const zoomIn = useCallback(() => {
     setScale((s) => clamp(Number((s + SCALE_STEP).toFixed(2)), SCALE_MIN, SCALE_MAX));
   }, []);
 
   const zoomOut = useCallback(() => {
     setScale((s) => clamp(Number((s - SCALE_STEP).toFixed(2)), SCALE_MIN, SCALE_MAX));
-  }, []);
-
-  const resetView = useCallback(() => {
-    setScale(1);
-    setPanX(0);
-    setPanY(0);
   }, []);
 
   const s2Blocks = useMemo(() => chunk(range(29, 112), 28), []);
@@ -197,78 +195,8 @@ export function PoolMap({
 
   return (
     <div
-      className={`font-[family-name:var(--font-montserrat)] mx-auto flex w-full flex-col items-center gap-6 ${resortChrome ? "font-semibold text-[#2c3d47]" : "text-[#d4d0c8]"} ${wideLayout ? "max-w-none" : "max-w-5xl"} ${className}`}
+      className={`font-[family-name:var(--font-montserrat)] mx-auto flex w-full flex-col items-center ${resortChrome ? "font-semibold text-[#2c3d47]" : "text-[#d4d0c8]"} ${wideLayout ? "max-w-none" : "max-w-5xl"} ${className}`}
     >
-      <div className="flex w-full max-w-[920px] flex-wrap items-center justify-center gap-4 text-sm">
-        <div
-          className={[
-            "flex items-center gap-1 rounded-lg p-0.5",
-            resortChrome
-              ? "border border-[#1f3744]/18 bg-[#c7d9e3] shadow-[0_8px_24px_-10px_rgba(6,16,22,0.28),inset_0_1px_0_rgba(255,255,255,0.42)]"
-              : "rounded-md border border-[#c9a962]/25 bg-[#141312] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.9)]",
-          ].join(" ")}
-        >
-          <button
-            type="button"
-            onClick={zoomOut}
-            className={[
-              "flex h-9 min-w-9 items-center justify-center rounded px-3 text-lg transition",
-              resortChrome
-                ? "font-semibold text-[#143038] hover:bg-[#aabfc9]/92 hover:text-teal-950"
-                : "font-light text-[#e8e4dc] hover:bg-[#c9a962]/12 hover:text-[#c9a962]",
-            ].join(" ")}
-            aria-label="Зменшити масштаб"
-          >
-            −
-          </button>
-          <span
-            className={[
-              "min-w-[3.5rem] text-center tabular-nums text-[11px] uppercase tracking-[0.2em]",
-              resortChrome
-                ? "font-semibold text-[#3b525f]"
-                : "text-[#9a968c]",
-            ].join(" ")}
-          >
-            {(scale * 100).toFixed(0)}%
-          </span>
-          <button
-            type="button"
-            onClick={zoomIn}
-            className={[
-              "flex h-9 min-w-9 items-center justify-center rounded px-3 text-lg transition",
-              resortChrome
-                ? "font-semibold text-[#143038] hover:bg-[#aabfc9]/92 hover:text-teal-950"
-                : "font-light text-[#e8e4dc] hover:bg-[#c9a962]/12 hover:text-[#c9a962]",
-            ].join(" ")}
-            aria-label="Збільшити масштаб"
-          >
-            +
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={resetView}
-          className={[
-            "rounded-lg px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
-            resortChrome
-              ? "border border-[#213c48]/24 bg-[#bed1db] text-[#15252d] shadow-sm hover:border-teal-900/45 hover:text-teal-950"
-              : "rounded-md border border-[#c9a962]/30 bg-transparent text-[#b8b4a8] hover:border-[#c9a962]/50 hover:text-[#c9a962]",
-          ].join(" ")}
-        >
-          Скинути вигляд
-        </button>
-        <span
-          className={[
-            "max-w-[min(100%,20rem)] text-center text-[11px]",
-            resortChrome
-              ? "font-semibold text-[#3b4e59]"
-              : "font-light text-[#6a6862]",
-          ].join(" ")}
-        >
-          Тягніть карту мишею / пальцем · колесо — масштаб
-        </span>
-      </div>
-
       <div
         ref={viewportRef}
         onPointerDown={onPointerDown}
@@ -284,6 +212,67 @@ export function PoolMap({
           dragging ? "cursor-grabbing" : "cursor-grab",
         ].join(" ")}
       >
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className={[
+            "pointer-events-auto absolute left-2 right-2 top-2 z-20 flex items-start gap-1.5 rounded-lg p-1 shadow-sm sm:gap-2 sm:rounded-xl sm:p-1.5",
+            resortChrome
+              ? "border border-slate-300/50 bg-white/95"
+              : "border border-white/12 bg-zinc-900/95",
+          ].join(" ")}
+        >
+          <div
+            className={[
+              "flex shrink-0 flex-col gap-0.5 rounded-md p-0.5",
+              resortChrome
+                ? "border border-slate-300/40 bg-slate-100"
+                : "border border-white/10 bg-black/50",
+            ].join(" ")}
+          >
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                zoomOut();
+              }}
+              disabled={scale <= SCALE_MIN}
+              className={[
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-[5px] text-sm font-semibold leading-none transition disabled:cursor-not-allowed disabled:opacity-35",
+                resortChrome
+                  ? "text-slate-800 hover:bg-white active:scale-[0.97]"
+                  : "text-zinc-200 hover:bg-white/10 active:scale-[0.97]",
+              ].join(" ")}
+              aria-label="Зменшити масштаб"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                zoomIn();
+              }}
+              disabled={scale >= SCALE_MAX}
+              className={[
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-[5px] text-sm font-semibold leading-none transition disabled:cursor-not-allowed disabled:opacity-35",
+                resortChrome
+                  ? "text-slate-800 hover:bg-white active:scale-[0.97]"
+                  : "text-zinc-200 hover:bg-white/10 active:scale-[0.97]",
+              ].join(" ")}
+              aria-label="Збільшити масштаб"
+            >
+              +
+            </button>
+          </div>
+          <SeatPricingLegend
+            resortChrome={resortChrome}
+            variant="mapOverlay"
+            occupancyLegend={showOccupancyLegend}
+          />
+        </div>
+
         {/* pointer-events-none: кліки проходять до карти/seat; viewport ловить bubble */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div
@@ -303,18 +292,26 @@ export function PoolMap({
             >
               <div className="relative z-10 flex min-h-[892px] w-full bg-white">
                 <div className="flex w-[32px] shrink-0 flex-col items-center justify-between border-r border-zinc-200/80 py-10 pr-0.5">
-                  {leftNums.map((n) => (
-                    <Seat
-                      key={n}
-                      id={`L-${n}`}
-                      label={n}
-                      variant="yellow"
-                      size="compact"
-                      unavailable={false}
-                      booked={!!booked[`L-${n}`]}
-                      onToggle={toggle}
-                    />
-                  ))}
+                  {leftNums.map((n) => {
+                    const sid = `L-${n}`;
+                    return (
+                      <Seat
+                        key={n}
+                        id={sid}
+                        label={n}
+                        variant="yellow"
+                        size="compact"
+                        unavailable={false}
+                        selected={!!selectedSeats[sid]}
+                        booked={!!bookedSeatIds[sid]}
+                        heldByOther={
+                          !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
+                        }
+                        priceUah={priceForSeatId(sid)}
+                        onToggle={onSeatToggle}
+                      />
+                    );
+                  })}
                 </div>
 
                 <div className="flex min-w-0 flex-1 flex-col px-1.5">
@@ -333,18 +330,25 @@ export function PoolMap({
                         key={bi}
                         className="grid grid-cols-7 gap-x-[2px] gap-y-[2px]"
                       >
-                        {block.map((n) => (
-                          <Seat
-                            key={n}
-                            id={`S2-${n}`}
-                            label={n}
-                            variant="pink"
-                            size="slim"
-                            unavailable={S2_GREY.has(n)}
-                            booked={!!booked[`S2-${n}`]}
-                            onToggle={toggle}
-                          />
-                        ))}
+                        {block.map((n) => {
+                          const sid = `S2-${n}`;
+                          return (
+                            <Seat
+                              key={n}
+                              id={sid}
+                              label={n}
+                              variant="pink"
+                              size="slim"
+                              selected={!!selectedSeats[sid]}
+                              booked={!!bookedSeatIds[sid]}
+                              heldByOther={
+                                !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
+                              }
+                              priceUah={priceForSeatId(sid)}
+                              onToggle={onSeatToggle}
+                            />
+                          );
+                        })}
                       </div>
                     ))}
                   </div>
@@ -376,18 +380,25 @@ export function PoolMap({
                         key={bi}
                         className="grid grid-cols-5 gap-x-[2px] gap-y-[2px]"
                       >
-                        {block.map((n) => (
-                          <Seat
-                            key={n}
-                            id={`S3-${n}`}
-                            label={n}
-                            variant="orange"
-                            size="slim"
-                            unavailable={S3_GREY.has(n)}
-                            booked={!!booked[`S3-${n}`]}
-                            onToggle={toggle}
-                          />
-                        ))}
+                        {block.map((n) => {
+                          const sid = `S3-${n}`;
+                          return (
+                            <Seat
+                              key={n}
+                              id={sid}
+                              label={n}
+                              variant="orange"
+                              size="slim"
+                              selected={!!selectedSeats[sid]}
+                              booked={!!bookedSeatIds[sid]}
+                              heldByOther={
+                                !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
+                              }
+                              priceUah={priceForSeatId(sid)}
+                              onToggle={onSeatToggle}
+                            />
+                          );
+                        })}
                       </div>
                     ))}
                   </div>
@@ -401,30 +412,46 @@ export function PoolMap({
                   />
                   <div className="flex items-end justify-between gap-2 px-0.5 pb-3">
                     <div className="flex gap-1.5">
-                      {bottomGreen.map((n) => (
-                        <Seat
-                          key={n}
-                          id={`G-${n}`}
-                          label={n}
-                          variant="green"
-                          size="normal"
-                          booked={!!booked[`G-${n}`]}
-                          onToggle={toggle}
-                        />
-                      ))}
+                      {bottomGreen.map((n) => {
+                        const sid = `G-${n}`;
+                        return (
+                          <Seat
+                            key={n}
+                            id={sid}
+                            label={n}
+                            variant="green"
+                            size="normal"
+                            selected={!!selectedSeats[sid]}
+                            booked={!!bookedSeatIds[sid]}
+                            heldByOther={
+                              !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
+                            }
+                            priceUah={priceForSeatId(sid)}
+                            onToggle={onSeatToggle}
+                          />
+                        );
+                      })}
                     </div>
                     <div className="flex gap-2">
-                      {bottomBlue.map((n) => (
-                        <Seat
-                          key={n}
-                          id={`B-${n}`}
-                          label={n}
-                          variant="blue"
-                          size="large"
-                          booked={!!booked[`B-${n}`]}
-                          onToggle={toggle}
-                        />
-                      ))}
+                      {bottomBlue.map((n) => {
+                        const sid = `B-${n}`;
+                        return (
+                          <Seat
+                            key={n}
+                            id={sid}
+                            label={n}
+                            variant="blue"
+                            size="large"
+                            selected={!!selectedSeats[sid]}
+                            booked={!!bookedSeatIds[sid]}
+                            heldByOther={
+                              !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
+                            }
+                            priceUah={priceForSeatId(sid)}
+                            onToggle={onSeatToggle}
+                          />
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -436,8 +463,13 @@ export function PoolMap({
                     label={8}
                     variant="blue"
                     size="large"
-                    booked={!!booked["R-8"]}
-                    onToggle={toggle}
+                    selected={!!selectedSeats["R-8"]}
+                    booked={!!bookedSeatIds["R-8"]}
+                    heldByOther={
+                      !!remoteDraftSeatIds["R-8"] && !selectedSeats["R-8"]
+                    }
+                    priceUah={priceForSeatId("R-8")}
+                    onToggle={onSeatToggle}
                   />
                   <LadderIcon />
                   <Seat
@@ -445,8 +477,13 @@ export function PoolMap({
                     label={10}
                     variant="blue"
                     size="large"
-                    booked={!!booked["R-10"]}
-                    onToggle={toggle}
+                    selected={!!selectedSeats["R-10"]}
+                    booked={!!bookedSeatIds["R-10"]}
+                    heldByOther={
+                      !!remoteDraftSeatIds["R-10"] && !selectedSeats["R-10"]
+                    }
+                    priceUah={priceForSeatId("R-10")}
+                    onToggle={onSeatToggle}
                   />
                   <LadderIcon />
                 </div>

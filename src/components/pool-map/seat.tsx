@@ -1,5 +1,7 @@
 "use client";
 
+import { seatZonePalette } from "@/lib/pool/seat-zone-palette";
+
 type SeatVariant = "pink" | "orange" | "yellow" | "blue" | "green" | "grey";
 
 type SeatSize = "compact" | "slim" | "normal" | "large";
@@ -9,35 +11,34 @@ type SeatProps = {
   label: number;
   variant?: SeatVariant;
   unavailable?: boolean;
-  booked: boolean;
+  /** Обрано користувачем (локальний вибір до відправки форми). */
+  selected: boolean;
+  /** Уже в заявці в БД — не можна обрати. */
+  booked?: boolean;
+  /** Інший відвідувач зараз тримає місце в чернетці (WebSocket). */
+  heldByOther?: boolean;
+  /** Ціна за місце, грн — у підказці та для доступності. */
+  priceUah?: number;
   onToggle: (id: string) => void;
   size?: SeatSize;
 };
 
-/** Преміум-палітра Rivera: приглушені тони замість насичених базових */
 const variantIdle: Record<SeatVariant, string> = {
-  pink: "bg-[#8f6674] shadow-[inset_0_-2px_0_rgba(0,0,0,0.18)] hover:brightness-110",
-  orange:
-    "bg-[#9c724e] shadow-[inset_0_-2px_0_rgba(0,0,0,0.18)] hover:brightness-110",
-  yellow:
-    "bg-[#9a8660] shadow-[inset_0_-2px_0_rgba(0,0,0,0.15)] hover:brightness-110",
-  blue: "bg-[#4d6b86] hover:brightness-110",
-  green: "bg-[#4d6550] hover:brightness-110",
-  grey: "bg-[#4a4a4a]",
+  pink: seatZonePalette.pink.idle,
+  orange: seatZonePalette.orange.idle,
+  yellow: seatZonePalette.yellow.idle,
+  blue: seatZonePalette.blue.idle,
+  green: seatZonePalette.green.idle,
+  grey: seatZonePalette.grey.idle,
 };
 
-const variantBooked: Record<SeatVariant, string> = {
-  pink:
-    "bg-[#5c3d4a] ring-2 ring-[#c9a962]/60 ring-offset-2 ring-offset-white",
-  orange:
-    "bg-[#5c4028] ring-2 ring-[#c9a962]/60 ring-offset-2 ring-offset-white",
-  yellow:
-    "bg-[#5c4f32] ring-2 ring-[#c9a962]/60 ring-offset-2 ring-offset-white",
-  blue:
-    "bg-[#2e3f50] ring-2 ring-[#c9a962]/60 ring-offset-2 ring-offset-white",
-  green:
-    "bg-[#2f3f32] ring-2 ring-[#c9a962]/60 ring-offset-2 ring-offset-white",
-  grey: "bg-[#3d3d3d]",
+const variantSelected: Record<SeatVariant, string> = {
+  pink: seatZonePalette.pink.selected,
+  orange: seatZonePalette.orange.selected,
+  yellow: seatZonePalette.yellow.selected,
+  blue: seatZonePalette.blue.selected,
+  green: seatZonePalette.green.selected,
+  grey: seatZonePalette.grey.selected,
 };
 
 const sizeClass: Record<SeatSize, string> = {
@@ -47,34 +48,92 @@ const sizeClass: Record<SeatSize, string> = {
   large: "h-11 w-11 text-sm",
 };
 
+/** Жовтий ряд — темні цифри для читабельності */
+const variantLabelClass: Record<SeatVariant, string> = {
+  pink: "text-white/95",
+  orange: "text-white/95",
+  yellow: "text-slate-900",
+  blue: "text-white/95",
+  green: "text-white/95",
+  grey: "text-white/90",
+};
+
+/** Підтверджене бронювання — дуже темно-сіре, суцільна заливка. */
+const bookedVisual =
+  "cursor-not-allowed border border-slate-950/55 bg-slate-900 text-white shadow-inner";
+
+/** Чернетка іншого користувача — легке сіре. */
+const heldByOtherVisual =
+  "cursor-not-allowed border border-slate-300/95 bg-slate-200 text-slate-800 shadow-sm";
+
 export function Seat({
   id,
   label,
   variant = "pink",
   unavailable = false,
-  booked,
+  selected,
+  booked = false,
+  heldByOther = false,
+  priceUah,
   onToggle,
   size = "slim",
 }: SeatProps) {
-  const disabled = unavailable;
+  const blockedByOther = heldByOther && !selected;
+  const disabled = unavailable || booked || blockedByOther;
+  const pricePart =
+    priceUah != null ? ` · ${priceUah.toLocaleString("uk-UA")} ₴` : "";
+  const title = unavailable
+    ? "Недоступно"
+    : booked
+      ? `Заброньовано${pricePart}`
+      : blockedByOther
+        ? `Хтось інший зараз обирає це місце${pricePart}`
+        : selected
+          ? `Зняти з вибору${pricePart}`
+          : `Обрати місце${pricePart}`;
+
+  const toneClass = unavailable
+    ? "text-white/90 opacity-55 " + variantIdle.grey
+    : booked
+      ? bookedVisual
+      : blockedByOther
+        ? heldByOtherVisual
+        : [
+            variantLabelClass[variant],
+            selected ? variantSelected[variant] : variantIdle[variant],
+          ].join(" ");
 
   return (
     <button
       type="button"
       disabled={disabled}
-      title={disabled ? "Недоступно" : booked ? "Зняти бронь" : "Обрати місце"}
+      title={title}
+      aria-label={`Місце ${id}${pricePart}`}
+      onPointerDown={(e) => e.stopPropagation()}
       onClick={() => !disabled && onToggle(id)}
       className={[
-        "flex select-none items-center justify-center rounded font-semibold text-white/95 transition duration-200",
+        "flex select-none flex-col items-center justify-center rounded font-semibold transition duration-200",
         sizeClass[size],
-        disabled
-          ? "cursor-not-allowed opacity-55 " + variantIdle.grey
-          : booked
-            ? variantBooked[variant]
-            : variantIdle[variant],
+        toneClass,
       ].join(" ")}
     >
-      {label}
+      <span className="leading-none">{label}</span>
+      {priceUah != null && (size === "normal" || size === "large") ? (
+        <span
+          className={[
+            "mt-0.5 text-[6px] font-bold leading-none",
+            booked
+              ? "text-white/85"
+              : blockedByOther
+                ? "text-slate-700"
+                : variant === "yellow"
+                  ? "text-slate-800"
+                  : "text-white/80",
+          ].join(" ")}
+        >
+          {priceUah} ₴
+        </span>
+      ) : null}
     </button>
   );
 }

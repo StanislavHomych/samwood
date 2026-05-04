@@ -1,11 +1,14 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookingSidePanel } from "@/components/booking/booking-side-panel";
+import { useSeatPresence } from "@/hooks/use-seat-presence";
 import { LuxuryDatePicker } from "@/components/booking/luxury-date-picker";
 import { VisitDateBar } from "@/components/booking/visit-date-bar";
 import { PoolMap } from "@/components/pool-map/pool-map";
+import { formatVisitDateKey } from "@/lib/dates/visit-date-key";
+import { sumSeatPrices } from "@/lib/pool/seat-pricing";
 
 function stripTime(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -15,6 +18,13 @@ export function BronBooking() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   /** Спочатку календар відкритий; «Змінити дату» лише відкриває його знов — дата не стирається */
   const [calendarOpen, setCalendarOpen] = useState(true);
+  /** Вибір місць на карті — за замовчуванням порожньо; скидається при зміні дня візиту */
+  const [selectedSeats, setSelectedSeats] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [bookedSeatIds, setBookedSeatIds] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const dateLockedIn = selectedDate !== null && !calendarOpen;
 
@@ -50,6 +60,117 @@ export function BronBooking() {
   }, []);
 
   const openCalendar = useCallback(() => setCalendarOpen(true), []);
+
+  const visitDateKey =
+    selectedDate != null ? formatVisitDateKey(selectedDate) : null;
+
+  const onBookedPatch = useCallback((seatIds: string[]) => {
+    if (seatIds.length === 0) return;
+    setBookedSeatIds((prev) => {
+      const next = { ...prev };
+      for (const id of seatIds) next[id] = true;
+      return next;
+    });
+    setSelectedSeats((prev) => {
+      const next = { ...prev };
+      for (const id of seatIds) delete next[id];
+      return next;
+    });
+  }, []);
+
+  const onDraftHoldExpired = useCallback(() => {
+    setSelectedSeats({});
+  }, []);
+
+  const presenceVisitKey = dateLockedIn ? visitDateKey : null;
+
+  const selectedSeatIds = useMemo(
+    () =>
+      Object.entries(selectedSeats)
+        .filter(([, on]) => on)
+        .map(([id]) => id)
+        .sort((a, b) => a.localeCompare(b, "uk")),
+    [selectedSeats],
+  );
+
+  const { remoteDraftSeatIds, livePresence } = useSeatPresence({
+    visitDateKey: presenceVisitKey,
+    selectedSeatIds,
+    onBookedPatch,
+    onDraftHoldExpired,
+  });
+
+  useEffect(() => {
+    if (visitDateKey == null) return;
+    setSelectedSeats({});
+  }, [visitDateKey]);
+
+  useEffect(() => {
+    if (!visitDateKey) {
+      setBookedSeatIds({});
+      return;
+    }
+    let cancelled = false;
+    fetch(
+      `/api/booking/occupied-seats?date=${encodeURIComponent(visitDateKey)}`,
+    )
+      .then((r) => r.json())
+      .then((d: { seatIds?: string[] }) => {
+        if (cancelled) return;
+        const o: Record<string, boolean> = {};
+        for (const id of d.seatIds ?? []) o[id] = true;
+        setBookedSeatIds(o);
+      })
+      .catch(() => {
+        if (!cancelled) setBookedSeatIds({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visitDateKey]);
+
+  const seatsTotalUah = useMemo(
+    () => sumSeatPrices(selectedSeatIds),
+    [selectedSeatIds],
+  );
+
+  const onSeatToggle = useCallback(
+    (seatId: string) => {
+      if (bookedSeatIds[seatId]) return;
+      if (remoteDraftSeatIds[seatId]) return;
+      setSelectedSeats((prev) => ({ ...prev, [seatId]: !prev[seatId] }));
+    },
+    [bookedSeatIds, remoteDraftSeatIds],
+  );
+
+  const clearSeatSelection = useCallback(() => {
+    setSelectedSeats({});
+  }, []);
+
+  const seatSyncConfigured = Boolean(
+    process.env.NEXT_PUBLIC_SEAT_SYNC_WS?.trim(),
+  );
+
+  const [showSeatSyncOfflineHint, setShowSeatSyncOfflineHint] =
+    useState(false);
+
+  useEffect(() => {
+    if (!dateLockedIn || !presenceVisitKey || !seatSyncConfigured) {
+      setShowSeatSyncOfflineHint(false);
+      return;
+    }
+    if (livePresence) {
+      setShowSeatSyncOfflineHint(false);
+      return;
+    }
+    const id = window.setTimeout(() => setShowSeatSyncOfflineHint(true), 2200);
+    return () => window.clearTimeout(id);
+  }, [
+    dateLockedIn,
+    presenceVisitKey,
+    seatSyncConfigured,
+    livePresence,
+  ]);
 
   useEffect(() => {
     if (!calendarOpen) return;
@@ -103,23 +224,43 @@ export function BronBooking() {
               canGoNext={visitNav.canGoNext}
             />
           ) : null}
-          <PoolMap wideLayout resortChrome />
+          {showSeatSyncOfflineHint ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2.5 text-center text-[11px] font-medium leading-snug text-amber-950 shadow-sm sm:text-[12px]">
+              Оновлення «хтось обирає місце» між вкладками зараз недоступне. Ціни
+              та зайняті місця на карті коректні після оновлення сторінки.
+            </p>
+          ) : null}
+          <PoolMap
+            wideLayout
+            resortChrome
+            selectedSeats={selectedSeats}
+            onSeatToggle={onSeatToggle}
+            bookedSeatIds={bookedSeatIds}
+            remoteDraftSeatIds={remoteDraftSeatIds}
+            showOccupancyLegend
+          />
         </div>
 
         <aside
-          className={`order-2 flex w-full min-w-0 flex-col gap-5 lg:sticky lg:top-28 lg:max-h-[calc(100vh-7rem)] lg:flex-[3] lg:basis-0 lg:overscroll-contain ${dateLockedIn ? "lg:overflow-y-auto" : "overflow-hidden lg:overflow-hidden"}`}
+          className={`order-2 flex w-full min-w-0 flex-col gap-5 lg:min-h-0 lg:sticky lg:top-28 lg:max-h-[calc(100vh-7rem)] lg:flex-[3] lg:basis-0 lg:overscroll-contain ${dateLockedIn ? "lg:flex lg:flex-col lg:gap-0 lg:overflow-hidden" : "overflow-hidden lg:overflow-hidden"}`}
         >
           {dateLockedIn ? (
-            <BookingSidePanel
-              selectedDate={selectedDate}
-              onEditDate={openCalendar}
-            />
+            <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+              <BookingSidePanel
+                selectedDate={selectedDate}
+                visitDateKey={formatVisitDateKey(selectedDate)}
+                onEditDate={openCalendar}
+                selectedSeatIds={selectedSeatIds}
+                seatsTotalUah={seatsTotalUah}
+                onClearSeatSelection={clearSeatSelection}
+              />
+            </div>
           ) : (
-            <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#1a2830]/20 bg-[#d3dde3]/92 px-6 py-12 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
-              <p className="font-[family-name:var(--font-cormorant)] text-xl font-semibold text-[#1a2429]">
+            <div className="flex min-h-[200px] flex-col items-center justify-center overflow-hidden rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
+              <p className="font-[family-name:var(--font-montserrat)] text-xl font-semibold text-slate-900">
                 Бронювання
               </p>
-              <p className="mt-3 max-w-[240px] text-[13px] font-medium leading-relaxed text-[#2d3b44]">
+              <p className="mt-3 max-w-[240px] font-[family-name:var(--font-montserrat)] text-[13px] font-medium leading-relaxed text-slate-600">
                 Спочатку оберіть день у календарі — з&apos;являться карта та форма бронювання.
               </p>
             </div>
@@ -147,21 +288,21 @@ export function BronBooking() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.99 }}
               transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-              className="relative z-10 flex w-full max-w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-[#1f2e38]/28 bg-[#dce6ea] shadow-[0_26px_64px_-22px_rgba(7,12,18,0.45)] ring-1 ring-white/35 max-h-[min(calc(100dvh-1.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)),92dvh)]"
+              className="relative z-10 flex w-full max-w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-lg max-h-[min(calc(100dvh-1.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)),92dvh)]"
             >
-              <div className="shrink-0 border-b border-[#2a3944]/14 bg-[linear-gradient(160deg,#c8d9e0_0%,#dae5ea_52%,#e2eaf0_100%)] px-4 py-3 text-center sm:px-5">
+              <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 text-center font-[family-name:var(--font-montserrat)] sm:px-5">
                 <p
                   id="bron-date-heading"
-                  className="font-[family-name:var(--font-cormorant)] text-[9px] font-semibold uppercase tracking-[0.3em] text-teal-900"
+                  className="text-[9px] font-semibold uppercase tracking-[0.24em] text-slate-600"
                 >
                   Rivera · дата візиту
                 </p>
-                <h2 className="mt-2 font-[family-name:var(--font-cormorant)] text-xl font-semibold leading-snug text-[#152025]">
+                <h2 className="mt-2 text-xl font-semibold leading-snug text-slate-900">
                   {selectedDate
                     ? "Змінити або підтвердити день"
                     : "Оберіть день відвідання"}
                 </h2>
-                <p className="mx-auto mt-1.5 max-w-[300px] text-[11px] font-medium leading-snug text-[#374854]">
+                <p className="mx-auto mt-1.5 max-w-[300px] text-[11px] font-medium leading-snug text-slate-600">
                   Повторний клік по даті закриває це вікно.
                 </p>
               </div>
@@ -177,11 +318,11 @@ export function BronBooking() {
               </div>
 
               {selectedDate && (
-                <div className="shrink-0 border-t border-[#2a3944]/12 bg-[#cfdae1]/72 px-4 py-2 text-center sm:px-5 sm:py-2.5">
+                <div className="shrink-0 border-t border-slate-200 bg-slate-50 px-4 py-2 text-center font-[family-name:var(--font-montserrat)] sm:px-5 sm:py-2.5">
                   <button
                     type="button"
                     onClick={() => setCalendarOpen(false)}
-                    className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#3f4f59] transition hover:text-teal-900"
+                    className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:text-slate-900"
                   >
                     Закрити без змін
                   </button>

@@ -2,26 +2,33 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
+import { formatSeatLineUk, priceForSeatId } from "@/lib/pool/seat-pricing";
+import { swatchForSeatId } from "@/lib/pool/seat-zone-palette";
 
-export type PaymentMethod = "card" | "cash" | "on_site";
+export type PaymentMethod = "monobank" | "cash" | "on_site";
 
 type BookingSidePanelProps = {
   selectedDate: Date;
+  /** Ключ дня візиту YYYY-MM-DD для API */
+  visitDateKey: string;
   /** Відкрити календар (дата зберігається, можна обрати інший день або той самий) */
   onEditDate: () => void;
+  selectedSeatIds: string[];
+  seatsTotalUah: number;
+  onClearSeatSelection: () => void;
 };
 
 const payments: { id: PaymentMethod; title: string; hint: string }[] = [
   {
-    id: "card",
-    title: "Картка онлайн",
-    hint: "Оплата посиланням або в додатку банку",
+    id: "monobank",
+    title: "Онлайн-оплата",
+    hint: "Картка, Apple Pay або Google Pay — на сторінці вашого банку",
   },
-  { id: "cash", title: "Готівка", hint: "При заїзді на рецепції" },
+  { id: "cash", title: "Готівка", hint: "Оплата при заїзді на рецепції" },
   {
     id: "on_site",
-    title: "На місці терміналом",
-    hint: "Карткою або готівкою у Rivera",
+    title: "На місці",
+    hint: "Карткою або готівкою безпосередньо у Rivera",
   },
 ];
 
@@ -34,19 +41,121 @@ function formatDateUk(d: Date) {
   }).format(d);
 }
 
+/** Не показувати користувачу технічні деталі (змінні середовища, внутрішні коди). */
+function friendlyClientError(raw: string | null): string {
+  if (!raw?.trim()) return "Щось пішло не так. Спробуйте ще раз.";
+  const r = raw;
+  if (
+    /MONOBANK|NEXT_PUBLIC|DATABASE_URL|\.env|npm run|SEAT_SYNC|VERCEL_URL/i.test(r)
+  ) {
+    return "Сервіс тимчасово недоступний. Спробуйте пізніше або оберіть інший спосіб оплати.";
+  }
+  return r;
+}
+
 export function BookingSidePanel({
   selectedDate,
+  visitDateKey,
   onEditDate,
+  selectedSeatIds,
+  seatsTotalUah,
+  onClearSeatSelection,
 }: BookingSidePanelProps) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [payment, setPayment] = useState<PaymentMethod>("card");
+  const [payment, setPayment] = useState<PaymentMethod>("monobank");
   const [details, setDetails] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [payPending, setPayPending] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitted(true);
+    if (selectedSeatIds.length === 0) return;
+    setPayError(null);
+
+    if (payment !== "monobank") {
+      setPayPending(true);
+      try {
+        const res = await fetch("/api/booking/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            visitDateKey,
+            seatIds: selectedSeatIds,
+            fullName: name,
+            phone,
+            details,
+            paymentMethod: payment,
+          }),
+        });
+        const data: unknown = await res.json().catch(() => ({}));
+        const err =
+          typeof data === "object" &&
+          data !== null &&
+          "error" in data &&
+          typeof (data as { error: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : null;
+        if (!res.ok) {
+          setPayError(friendlyClientError(err));
+          return;
+        }
+        setSubmitted(true);
+      } catch {
+        setPayError(
+          "Не вдалося надіслати заявку. Перевірте з’єднання з інтернетом і спробуйте ще раз.",
+        );
+      } finally {
+        setPayPending(false);
+      }
+      return;
+    }
+
+    setPayPending(true);
+    try {
+      const res = await fetch("/api/booking/monobank-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          visitDateKey,
+          seatIds: selectedSeatIds,
+          fullName: name,
+          phone,
+          details,
+        }),
+      });
+      const data: unknown = await res.json().catch(() => ({}));
+      const err =
+        typeof data === "object" &&
+        data !== null &&
+        "error" in data &&
+        typeof (data as { error: unknown }).error === "string"
+          ? (data as { error: string }).error
+          : null;
+      if (!res.ok) {
+        setPayError(friendlyClientError(err));
+        return;
+      }
+      const pageUrl =
+        typeof data === "object" &&
+        data !== null &&
+        "pageUrl" in data &&
+        typeof (data as { pageUrl: unknown }).pageUrl === "string"
+          ? (data as { pageUrl: string }).pageUrl
+          : null;
+      if (pageUrl) {
+        window.location.assign(pageUrl);
+        return;
+      }
+      setPayError("Сервер не повернув посилання на оплату.");
+    } catch {
+      setPayError(
+        "Не вдалося перейти до оплати. Перевірте з’єднання з інтернетом і спробуйте ще раз.",
+      );
+    } finally {
+      setPayPending(false);
+    }
   }
 
   return (
@@ -55,66 +164,126 @@ export function BookingSidePanel({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      className="flex w-full flex-col rounded-2xl border border-[#1f2f3a]/22 bg-[#d5e1e9] shadow-[0_18px_50px_-18px_rgba(7,13,18,0.35),inset_0_1px_0_rgba(255,255,255,0.38)]"
+      className="flex min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-sm lg:h-full"
     >
-        <div className="border-b border-[#273844]/14 bg-[linear-gradient(115deg,#bfd0d9_0%,#d9e6ee_62%,#dbe8ef_100%)] px-4 py-4 sm:px-5">
+        <div className="shrink-0 border-b border-slate-200/80 bg-white px-4 py-4 sm:px-5">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-[family-name:var(--font-cormorant)] text-[11px] font-semibold uppercase tracking-[0.32em] text-teal-800">
+            <div className="min-w-0 font-[family-name:var(--font-montserrat)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600">
                 Бронювання
               </p>
-              <p className="mt-2 font-[family-name:var(--font-cormorant)] text-xl font-semibold leading-snug text-[#121a20]">
+              <p className="mt-2 text-xl font-semibold leading-snug text-slate-900">
                 Дані відвідувача
               </p>
-              <p className="mt-1 truncate text-[12px] font-semibold capitalize text-[#2c3c47]">
+              <p className="mt-1 truncate text-[12px] font-semibold capitalize text-slate-700">
                 {formatDateUk(selectedDate)}
               </p>
             </div>
             <button
               type="button"
               onClick={onEditDate}
-              className="shrink-0 rounded-lg border border-teal-700/55 bg-[#c5d9e2] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-950 shadow-sm transition hover:border-teal-800 hover:bg-[#b9d4df]"
+              className="shrink-0 rounded-2xl border border-slate-300 bg-white px-3 py-2 font-[family-name:var(--font-montserrat)] text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
             >
               Календар
             </button>
           </div>
         </div>
 
+        <div className="min-h-0 min-w-0 overflow-x-hidden px-4 py-5 font-[family-name:var(--font-montserrat)] sm:px-5 sm:py-6 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
         <form
           onSubmit={handleSubmit}
-          className="flex flex-1 flex-col gap-4 px-4 py-5 sm:px-5 sm:py-6"
+          className="flex flex-col gap-4"
         >
           {submitted ? (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl border border-teal-800/35 bg-[#b8cfd9]/75 px-5 py-8 text-center"
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-8 text-center"
             >
-              <p className="font-[family-name:var(--font-cormorant)] text-2xl font-semibold text-[#0f181f]">
+              <p className="text-2xl font-semibold text-slate-900">
                 Дякуємо!
               </p>
-              <p className="mt-3 text-sm font-medium leading-relaxed text-[#2a3840]">
-                Заявку отримано (демо). Найближчим часом з вами зв&apos;яжеться
+              <p className="mt-3 text-sm font-medium leading-relaxed text-slate-700">
+                Заявку збережено. Найближчим часом з вами зв&apos;яжеться
                 адміністратор Rivera.
               </p>
             </motion.div>
           ) : (
             <>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+                    Обрані місця
+                  </p>
+                  {selectedSeatIds.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={onClearSeatSelection}
+                      className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.14em] text-teal-800 underline-offset-2 transition hover:text-teal-950 hover:underline"
+                    >
+                      Скинути
+                    </button>
+                  ) : null}
+                </div>
+                {selectedSeatIds.length === 0 ? (
+                  <p className="mt-2 text-[12px] font-semibold leading-snug text-slate-600">
+                    Натисніть номери на карті — тут з&apos;явиться список і сума.
+                  </p>
+                ) : (
+                  <>
+                    <ul className="mt-2 flex min-h-0 max-h-[min(40vh,14rem)] flex-col gap-2 overflow-y-auto overscroll-contain pr-0.5 [-webkit-overflow-scrolling:touch]">
+                      {selectedSeatIds.map((id) => (
+                        <li
+                          key={id}
+                          className="flex items-center justify-between gap-3 border-b border-slate-200/80 pb-2 text-[12px] last:border-b-0 last:pb-0"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="h-3.5 w-3.5 shrink-0 rounded-md border border-black/10"
+                              style={{ backgroundColor: swatchForSeatId(id) }}
+                              aria-hidden
+                            />
+                            <span className="font-semibold leading-snug text-slate-900">
+                              {formatSeatLineUk(id)}
+                            </span>
+                          </span>
+                          <span className="shrink-0 tabular-nums font-semibold text-slate-700">
+                            {priceForSeatId(id).toLocaleString("uk-UA")} ₴
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-slate-200/90 pt-3">
+                      <span className="text-[15px] font-semibold text-slate-900">
+                        Загальна ціна
+                      </span>
+                      <span className="text-[15px] font-semibold tabular-nums text-slate-900">
+                        {seatsTotalUah.toLocaleString("uk-UA", {
+                          style: "currency",
+                          currency: "UAH",
+                          maximumFractionDigits: 0,
+                        })}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+
               <label className="block">
-                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.22em] text-[#354652]">
-                  Повне ім&apos;я
+                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-600">
+                  Ім&apos;я
                 </span>
                 <input
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Наприклад, Олена Коваленко"
-                  className="w-full rounded-xl border border-[#2a3f4d]/28 bg-[#c9d8e1]/95 px-4 py-3 text-[15px] font-semibold text-[#121a21] outline-none transition placeholder:font-semibold placeholder:text-[#5c6f7a] focus:border-teal-700 focus:bg-[#d2e4ed] focus:ring-2 focus:ring-teal-900/20"
+                  placeholder="Введіть ім'я та прізвище"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[15px] font-semibold text-slate-900 outline-none transition placeholder:text-xs placeholder:font-medium placeholder:text-slate-400 focus:border-teal-600 focus:outline-none"
                 />
               </label>
 
               <label className="block">
-                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.22em] text-[#354652]">
+                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-600">
                   Телефон
                 </span>
                 <input
@@ -122,13 +291,13 @@ export function BookingSidePanel({
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+380 XX XXX XX XX"
-                  className="w-full rounded-xl border border-[#2a3f4d]/28 bg-[#c9d8e1]/95 px-4 py-3 text-[15px] font-semibold text-[#121a21] outline-none transition placeholder:font-semibold placeholder:text-[#5c6f7a] focus:border-teal-700 focus:bg-[#d2e4ed] focus:ring-2 focus:ring-teal-900/20"
+                  placeholder="+380 …"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[15px] font-semibold text-slate-900 outline-none transition placeholder:text-xs placeholder:font-medium placeholder:text-slate-400 focus:border-teal-600 focus:outline-none"
                 />
               </label>
 
               <div>
-                <span className="mb-3 block text-[10px] font-semibold uppercase tracking-[0.22em] text-[#354652]">
+                <span className="mb-3 block text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-600">
                   Спосіб оплати
                 </span>
                 <div className="flex flex-col gap-2">
@@ -138,16 +307,16 @@ export function BookingSidePanel({
                       type="button"
                       onClick={() => setPayment(p.id)}
                       className={[
-                        "flex flex-col items-start rounded-xl border px-4 py-3 text-left transition",
+                        "flex flex-col items-start rounded-2xl border-2 px-4 py-3 text-left transition",
                         payment === p.id
-                          ? "border-teal-800 bg-[#9bc4cf]/62 shadow-md ring-1 ring-teal-900/25"
-                          : "border-[#2f4554]/25 bg-[#c6d9e4]/76 hover:border-teal-800/42",
+                          ? "border-teal-700 bg-teal-50/80 shadow-sm"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
                       ].join(" ")}
                     >
-                      <span className="text-[14px] font-semibold text-[#101820]">
+                      <span className="text-[14px] font-semibold text-slate-900">
                         {p.title}
                       </span>
-                      <span className="mt-1 text-[11px] font-semibold text-[#394b56]">
+                      <span className="mt-1 text-[11px] font-semibold text-slate-600">
                         {p.hint}
                       </span>
                     </button>
@@ -156,32 +325,46 @@ export function BookingSidePanel({
               </div>
 
               <label className="block">
-                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.22em] text-[#354652]">
+                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-600">
                   Деталі (необов&apos;язково)
                 </span>
                 <textarea
                   value={details}
                   onChange={(e) => setDetails(e.target.value)}
                   rows={3}
-                  placeholder="Побажання щодо зони, часу заїзду…"
-                  className="w-full resize-none rounded-xl border border-[#2a3f4d]/28 bg-[#c9d8e1]/95 px-4 py-3 text-[14px] font-semibold text-[#121a21] outline-none transition placeholder:font-semibold placeholder:text-[#5c6f7a] focus:border-teal-700 focus:bg-[#d2e4ed] focus:ring-2 focus:ring-teal-900/20"
+                  placeholder="За бажанням: зона, час заїзду…"
+                  className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[14px] font-semibold text-slate-900 outline-none transition placeholder:text-xs placeholder:font-medium placeholder:text-slate-400 focus:border-teal-600 focus:outline-none"
                 />
               </label>
 
+              {payError ? (
+                <p className="rounded-2xl border border-red-800/35 bg-red-950/10 px-3 py-2 text-center text-[12px] font-semibold text-red-950">
+                  {payError}
+                </p>
+              ) : null}
+
               <button
                 type="submit"
-                className="mt-2 rounded-xl border border-[#0f5f59] bg-[#127a71] py-3.5 text-[11px] font-semibold uppercase tracking-[0.28em] text-[#ecf8f7] shadow-[0_8px_24px_-8px_rgba(6,30,28,0.55)] transition hover:border-[#0a4f48] hover:bg-[#0f6d64]"
+                disabled={selectedSeatIds.length === 0 || payPending}
+                className={[
+                  "mt-2 rounded-2xl border py-3.5 text-[11px] font-semibold uppercase tracking-[0.28em] shadow-sm transition",
+                  selectedSeatIds.length === 0 || payPending
+                    ? "cursor-not-allowed border-slate-200 bg-slate-200 text-slate-500"
+                    : "border-teal-800 bg-teal-700 text-white hover:border-teal-900 hover:bg-teal-800",
+                ].join(" ")}
               >
-                Надіслати запит
+                {payPending
+                  ? payment === "monobank"
+                    ? "Перехід до оплати…"
+                    : "Надсилання…"
+                  : payment === "monobank"
+                    ? "Перейти до оплати"
+                    : "Надіслати запит"}
               </button>
-
-              <p className="text-center text-[10px] font-semibold leading-relaxed text-[#465a63]">
-                Після відправлення оберіть місця на карті — збереження місць окремим
-                кроком з&apos;явиться разом із бекендом.
-              </p>
             </>
           )}
         </form>
+        </div>
     </motion.aside>
   );
 }

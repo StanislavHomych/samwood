@@ -47,6 +47,10 @@ export function LuxuryDatePicker({
   variant = "noir",
 }: LuxuryDatePickerProps) {
   const resort = variant === "resort";
+  /** У курортному /bron — один шрифт (Montserrat); noir лишається Cormorant. */
+  const hf = resort
+    ? "font-[family-name:var(--font-montserrat)]"
+    : "font-[family-name:var(--font-cormorant)]";
   const today = useMemo(() => stripTime(new Date()), []);
   const [cursor, setCursor] = useState(() =>
     stripTime(value ?? new Date()),
@@ -100,10 +104,10 @@ export function LuxuryDatePicker({
         "overflow-hidden rounded-xl border shadow-[inset_0_1px_0_rgba(201,169,98,0.06)]",
         resort
           ? embedded
-            ? "rounded-lg border-[#294152]/22 bg-[#b4c7d2]/88 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.32)] sm:p-2.5"
+            ? "rounded-lg border-slate-200 bg-white p-2 shadow-sm sm:p-2.5"
             : compact
-              ? "border-[#294152]/26 bg-[#c0d3dd] p-3.5 shadow-[0_14px_38px_-14px_rgba(6,14,20,0.38)]"
-              : "rounded-2xl border-[#294152]/26 bg-[#c5d7e1] p-6 shadow-[0_20px_50px_-18px_rgba(6,14,20,0.35)] md:p-8"
+              ? "border-slate-200 bg-white p-3.5 shadow-sm"
+              : "rounded-2xl border-slate-200 bg-white p-6 shadow-sm md:p-8"
           : embedded
             ? "border-[#c9a962]/14 bg-[#12110f]/90 p-2 shadow-none sm:p-2.5"
             : compact
@@ -116,15 +120,17 @@ export function LuxuryDatePicker({
           <div>
             <p
               className={[
-                "font-[family-name:var(--font-cormorant)] text-[11px] uppercase tracking-[0.45em]",
-                resort ? "font-semibold text-teal-800" : "text-[#c9a962]/80",
+                hf,
+                "text-[11px] uppercase tracking-[0.45em]",
+                resort ? "font-semibold text-slate-600" : "text-[#c9a962]/80",
               ].join(" ")}
             >
               Візит
             </p>
             <h2
               className={[
-                "mt-1 font-[family-name:var(--font-cormorant)] text-2xl md:text-3xl",
+                "mt-1 text-2xl md:text-3xl",
+                hf,
                 resort ? "font-semibold text-slate-900" : "font-light text-[#f5f5dc]",
               ].join(" ")}
             >
@@ -134,7 +140,7 @@ export function LuxuryDatePicker({
           <p
             className={[
               "max-w-sm text-[12px] leading-relaxed",
-              resort ? "font-medium text-slate-600" : "font-light text-[#8a877d]",
+              resort ? `${hf} font-medium text-slate-600` : "font-light text-[#8a877d]",
             ].join(" ")}
           >
             Після вибору з&apos;явиться форма бронювання праворуч — ім&apos;я, телефон і спосіб оплати.
@@ -146,13 +152,14 @@ export function LuxuryDatePicker({
         <div
           className={[
             "mb-3 border-b pb-2.5",
-            resort ? "border-[#2b4050]/22" : "border-[#c9a962]/10",
+            resort ? "border-slate-200" : "border-[#c9a962]/10",
           ].join(" ")}
         >
           <p
             className={[
-              "font-[family-name:var(--font-cormorant)] text-[9px] uppercase tracking-[0.35em]",
-              resort ? "font-semibold text-teal-800" : "text-[#c9a962]/65",
+              hf,
+              "text-[9px] uppercase tracking-[0.35em]",
+              resort ? "font-semibold text-slate-600" : "text-[#c9a962]/65",
             ].join(" ")}
           >
             Дата візиту
@@ -163,7 +170,7 @@ export function LuxuryDatePicker({
       <div
         className={[
           "flex items-center justify-between gap-2 border-b",
-          resort ? "border-[#2b4050]/22" : "border-[#c9a962]/12",
+          resort ? "border-slate-200" : "border-[#c9a962]/12",
           embedded ? "pb-2" : compact ? "pb-3" : "gap-4 pb-5",
         ].join(" ")}
       >
@@ -173,7 +180,7 @@ export function LuxuryDatePicker({
           className={[
             "flex items-center justify-center rounded-lg border transition",
             resort
-              ? "border-teal-950/30 text-teal-950 hover:bg-[#94b0bc]/45"
+              ? "border-slate-200 text-slate-800 hover:bg-slate-50"
               : "border-[#c9a962]/25 text-[#c9a962] hover:bg-[#c9a962]/12",
             embedded
               ? "h-7 w-7 text-xs"
@@ -187,7 +194,8 @@ export function LuxuryDatePicker({
         </button>
         <p
           className={[
-            "min-w-0 truncate text-center font-[family-name:var(--font-cormorant)] tracking-wide",
+            "min-w-0 truncate text-center tracking-wide",
+            hf,
             resort
               ? "font-semibold text-slate-900"
               : "text-[#e8e4dc]",
@@ -205,7 +213,7 @@ export function LuxuryDatePicker({
           className={[
             "flex items-center justify-center rounded-lg border transition",
             resort
-              ? "border-teal-950/30 text-teal-950 hover:bg-[#94b0bc]/45"
+              ? "border-slate-200 text-slate-800 hover:bg-slate-50"
               : "border-[#c9a962]/25 text-[#c9a962] hover:bg-[#c9a962]/12",
             embedded
               ? "h-7 w-7 text-xs"
@@ -222,7 +230,9 @@ export function LuxuryDatePicker({
       <div
         className={[
           "grid grid-cols-7 text-center uppercase tracking-[0.15em]",
-            resort ? "font-semibold text-[#3b5160]" : "font-medium text-[#6a6860]",
+            resort
+              ? `font-semibold text-slate-600 ${hf}`
+              : "font-medium text-[#6a6860]",
           embedded
             ? "mt-1.5 gap-y-0 text-[8px]"
             : compact
@@ -269,7 +279,7 @@ export function LuxuryDatePicker({
                     ? "cursor-not-allowed text-slate-300 opacity-45"
                     : "cursor-not-allowed text-[#4a4844] opacity-35"
                   : resort
-                    ? "font-semibold text-[#132128] hover:bg-[#8fabb8]/52 hover:text-teal-950"
+                    ? `font-semibold text-slate-900 hover:bg-slate-100 ${hf}`
                     : "text-[#d4cfc4] hover:bg-[#c9a962]/14 hover:text-[#f5f5dc]",
                 ymd(cell.date) === sel
                   ? embedded && resort
@@ -310,7 +320,7 @@ export function LuxuryDatePicker({
         className={[
           "border-t",
           resort
-            ? "border-[#2b4050]/22 text-[#354b59]"
+            ? `border-slate-200 text-slate-600 ${hf}`
             : "border-[#c9a962]/12 text-[#7a766c]",
           embedded
             ? "mt-1.5 flex flex-row flex-wrap items-center justify-between gap-x-2 gap-y-1 pt-2 text-[9px]"

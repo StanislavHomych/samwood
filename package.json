@@ -4,15 +4,24 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "seat-sync": "node seat-sync-server.cjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate": "typeorm-ts-node-commonjs migration:run -d src/lib/db/data-source-cli.ts",
+    "db:migrate:revert": "typeorm-ts-node-commonjs migration:revert -d src/lib/db/data-source-cli.ts",
+    "db:migration:generate": "typeorm-ts-node-commonjs migration:generate src/lib/db/migrations/MigrationName -d src/lib/db/data-source-cli.ts"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",
     "next": "16.2.4",
+    "pg": "^8.20.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^0.3.28",
+    "ws": "^8.20.0",
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -22,6 +31,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }
