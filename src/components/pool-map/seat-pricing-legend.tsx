@@ -24,16 +24,16 @@ export function SeatPricingLegend({
       : "border border-white/10 bg-zinc-950/50";
 
     /** Плоский «сквіркл»: заливка + тонка рамка; збільшений для читабельності на карті. */
-    const sq = "h-5 w-5 shrink-0 rounded-[6px] border";
+    const sq = "h-4 w-4 shrink-0 rounded-[6px] border sm:h-5 sm:w-5";
     const swatchZoneBorder = resortChrome ? "border-black/15" : "border-white/15";
 
     const priceOnly = resortChrome
-      ? "text-[10px] font-semibold tabular-nums leading-none text-slate-800"
-      : "text-[10px] font-semibold tabular-nums leading-none text-zinc-100";
+      ? "text-[9px] font-semibold tabular-nums leading-none text-slate-800 sm:text-[10px]"
+      : "text-[9px] font-semibold tabular-nums leading-none text-zinc-100 sm:text-[10px]";
 
     const statusLabel = resortChrome
-      ? "text-[10px] font-medium leading-tight text-slate-700"
-      : "text-[10px] font-medium leading-tight text-zinc-300";
+      ? "text-[9px] font-medium leading-tight text-slate-700 sm:text-[10px]"
+      : "text-[9px] font-medium leading-tight text-zinc-300 sm:text-[10px]";
 
     const divider = resortChrome
       ? "h-px w-full shrink-0 bg-slate-200"
@@ -42,13 +42,13 @@ export function SeatPricingLegend({
     return (
       <div
         className={[
-          "flex min-h-0 min-w-0 flex-1 flex-col gap-1 rounded-md px-1.5 py-1 sm:gap-1.5 sm:px-2 sm:py-1.5",
+          "flex min-h-0 min-w-0 flex-1 flex-col gap-1 rounded-md px-1 py-1 sm:gap-1.5 sm:px-2 sm:py-1.5",
           panel,
         ].join(" ")}
       >
         <span className="sr-only">Тарифи за зонами: назва зони у підказці при наведенні на зразок.</span>
         <div
-          className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-2.5"
+          className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 sm:gap-x-2.5"
           role="list"
           aria-label="Тарифи за зонами"
         >
@@ -58,7 +58,7 @@ export function SeatPricingLegend({
               role="listitem"
               title={`${row.title} — ${row.price} ₴`}
               aria-label={`${row.title}, ${row.price} гривень`}
-              className="inline-flex max-w-full shrink-0 items-center gap-1.5"
+              className="inline-flex max-w-full shrink-0 items-center gap-1 sm:gap-1.5"
             >
               <span
                 className={`${sq} ${swatchZoneBorder}`}

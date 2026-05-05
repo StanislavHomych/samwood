@@ -1,5 +1,6 @@
 import { isAllowedPoolSeatId, MAX_SEATS_PER_BOOKING } from "@/lib/booking/seat-id";
 import { parseVisitDateKey } from "@/lib/dates/visit-date-key";
+import { z } from "zod";
 
 export type BookingCommonBody = {
   visitDateKey: string;
@@ -12,46 +13,39 @@ export type BookingCommonBody = {
 
 type Fail = { ok: false; error: string; status: number };
 
+const bookingCommonSchema = z
+  .object({
+    visitDateKey: z.string().trim().min(1),
+    seatIds: z
+      .array(z.string())
+      .min(1, `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`)
+      .max(MAX_SEATS_PER_BOOKING, `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`),
+    fullName: z.string().trim().min(2, "Вкажіть повне ім'я").max(200, "Вкажіть повне ім'я"),
+    phone: z.string().trim().min(5, "Вкажіть телефон").max(32, "Вкажіть телефон"),
+    details: z.string().trim().max(2000).optional().default(""),
+  })
+  .strip();
+
 /** Спільна валідація тіла для Monobank та збереження заявки в БД. */
 export function parseBookingCommonBody(raw: unknown):
   | { ok: true; data: BookingCommonBody }
   | Fail {
-  if (typeof raw !== "object" || raw === null) {
+  const parsed = bookingCommonSchema.safeParse(raw);
+  if (!parsed.success) {
     return { ok: false, error: "Некоректний JSON", status: 400 };
   }
-  const body = raw as Record<string, unknown>;
-
-  const visitDateKey =
-    typeof body.visitDateKey === "string" ? body.visitDateKey.trim() : "";
-  const seatIds = Array.isArray(body.seatIds) ? body.seatIds : [];
-  const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
-  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
-  const details =
-    typeof body.details === "string" ? body.details.trim().slice(0, 2000) : "";
+  const { visitDateKey, seatIds, fullName, phone, details } = parsed.data;
 
   const visitDate = parseVisitDateKey(visitDateKey);
   if (!visitDate) {
     return { ok: false, error: "Невірна дата візиту", status: 400 };
   }
-  if (seatIds.length === 0 || seatIds.length > MAX_SEATS_PER_BOOKING) {
-    return {
-      ok: false,
-      error: `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`,
-      status: 400,
-    };
-  }
   const seen = new Set<string>();
   for (const id of seatIds) {
-    if (typeof id !== "string" || !isAllowedPoolSeatId(id) || seen.has(id)) {
+    if (!isAllowedPoolSeatId(id) || seen.has(id)) {
       return { ok: false, error: "Некоректний список місць", status: 400 };
     }
     seen.add(id);
-  }
-  if (fullName.length < 2 || fullName.length > 200) {
-    return { ok: false, error: "Вкажіть повне ім'я", status: 400 };
-  }
-  if (phone.length < 5 || phone.length > 32) {
-    return { ok: false, error: "Вкажіть телефон", status: 400 };
   }
 
   return {

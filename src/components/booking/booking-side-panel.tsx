@@ -6,6 +6,7 @@ import { formatSeatLineUk, priceForSeatId } from "@/lib/pool/seat-pricing";
 import { swatchForSeatId } from "@/lib/pool/seat-zone-palette";
 
 export type PaymentMethod = "monobank" | "cash" | "on_site";
+const PAYMENT_RECEIPT_STORAGE_KEY = "rivera_payment_receipt_v1";
 
 type BookingSidePanelProps = {
   selectedDate: Date;
@@ -16,6 +17,7 @@ type BookingSidePanelProps = {
   selectedSeatIds: string[];
   seatsTotalUah: number;
   onClearSeatSelection: () => void;
+  onBookingSaved?: (seatIds: string[]) => void;
 };
 
 const payments: { id: PaymentMethod; title: string; hint: string }[] = [
@@ -60,6 +62,7 @@ export function BookingSidePanel({
   selectedSeatIds,
   seatsTotalUah,
   onClearSeatSelection,
+  onBookingSaved,
 }: BookingSidePanelProps) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -101,6 +104,7 @@ export function BookingSidePanel({
           setPayError(friendlyClientError(err));
           return;
         }
+        onBookingSaved?.(selectedSeatIds);
         setSubmitted(true);
       } catch {
         setPayError(
@@ -144,7 +148,39 @@ export function BookingSidePanel({
         typeof (data as { pageUrl: unknown }).pageUrl === "string"
           ? (data as { pageUrl: string }).pageUrl
           : null;
+      const amountKopiyky =
+        typeof data === "object" &&
+        data !== null &&
+        "amountKopiyky" in data &&
+        typeof (data as { amountKopiyky: unknown }).amountKopiyky === "number"
+          ? (data as { amountKopiyky: number }).amountKopiyky
+          : Math.round(seatsTotalUah * 100);
+      const invoiceId =
+        typeof data === "object" &&
+        data !== null &&
+        "invoiceId" in data &&
+        typeof (data as { invoiceId: unknown }).invoiceId === "string"
+          ? (data as { invoiceId: string }).invoiceId
+          : null;
       if (pageUrl) {
+        try {
+          window.sessionStorage.setItem(
+            PAYMENT_RECEIPT_STORAGE_KEY,
+            JSON.stringify({
+              createdAtIso: new Date().toISOString(),
+              visitDateKey,
+              seatIds: selectedSeatIds,
+              fullName: name,
+              phone,
+              details,
+              paymentMethod: "monobank",
+              amountKopiyky,
+              invoiceId,
+            }),
+          );
+        } catch {
+          // If storage is unavailable, still continue to payment page.
+        }
         window.location.assign(pageUrl);
         return;
       }
@@ -166,23 +202,23 @@ export function BookingSidePanel({
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       className="flex min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-sm lg:h-full"
     >
-        <div className="shrink-0 border-b border-slate-200/80 bg-white px-4 py-4 sm:px-5">
+        <div className="shrink-0 border-b border-slate-200/80 bg-white px-4 py-3.5 sm:px-5 sm:py-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 font-[family-name:var(--font-montserrat)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 sm:text-[11px] sm:tracking-[0.22em]">
                 Бронювання
               </p>
-              <p className="mt-2 text-xl font-semibold leading-snug text-slate-900">
+              <p className="mt-1.5 text-lg font-semibold leading-tight text-slate-900 sm:mt-2 sm:text-xl sm:leading-snug">
                 Дані відвідувача
               </p>
-              <p className="mt-1 truncate text-[12px] font-semibold capitalize text-slate-700">
+              <p className="mt-1 truncate text-[11px] font-semibold capitalize text-slate-700 sm:text-[12px]">
                 {formatDateUk(selectedDate)}
               </p>
             </div>
             <button
               type="button"
               onClick={onEditDate}
-              className="shrink-0 rounded-2xl border border-slate-300 bg-white px-3 py-2 font-[family-name:var(--font-montserrat)] text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+              className="shrink-0 rounded-2xl border border-slate-300 bg-white px-3 py-2 font-[family-name:var(--font-montserrat)] text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 sm:tracking-[0.16em]"
             >
               Календар
             </button>

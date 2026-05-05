@@ -3,6 +3,7 @@ import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body"
 import { createMonobankInvoice, isMonobankConfigured } from "@/lib/payments/monobank";
 import { publicSiteBaseUrl } from "@/lib/site-url";
 import { sumSeatPrices } from "@/lib/pool/seat-pricing";
+import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   }
 
-  const { visitDateKey, seatIds, fullName, phone, details } = parsed.data;
+  const { visitDate, visitDateKey, seatIds, fullName, phone, details } = parsed.data;
 
   if (!isMonobankConfigured()) {
     return NextResponse.json(
@@ -32,10 +33,8 @@ export async function POST(req: Request) {
   }
 
   const totalUah = sumSeatPrices(seatIds);
-  const amountKopiyky = Math.round(totalUah * 100);
-  if (amountKopiyky < 100) {
-    return NextResponse.json({ error: "Сума замовлення занадто мала" }, { status: 400 });
-  }
+  // Monobank не приймає суму меншу за 1 грн.
+  const amountKopiyky = Math.max(100, Math.round(totalUah * 100));
 
   const base = publicSiteBaseUrl();
   const redirectUrl = `${base}/bron/pay-return`;
@@ -56,7 +55,36 @@ export async function POST(req: Request) {
       webHookUrl: webhook || undefined,
     });
 
-    // TODO: зберегти booking_requests (fullName, phone, …) + invoiceId у БД
+    try {
+      const ds = await getDataSource();
+      const repo = getBookingRequestRepository(ds);
+      const seatsJson = Object.fromEntries(seatIds.map((id) => [id, true]));
+      const existing = await repo.findOne({ where: { monobankInvoiceId: invoiceId } });
+      if (!existing) {
+        const row = repo.create({
+          visitDate,
+          fullName,
+          phone,
+          paymentMethod: "monobank",
+          paymentStatus: "requested",
+          monobankInvoiceId: invoiceId,
+          amountKopiyky,
+          paidAt: null,
+          details: details || null,
+          seatsJson,
+          paymentPayloadJson: {
+            source: "monobank_invoice_create",
+            visitDateKey,
+            seatIds,
+            amountKopiyky,
+            invoiceId,
+          },
+        });
+        await repo.save(row);
+      }
+    } catch (persistError) {
+      console.error("[monobank-invoice] failed to persist pending booking", persistError);
+    }
 
     return NextResponse.json({
       invoiceId,

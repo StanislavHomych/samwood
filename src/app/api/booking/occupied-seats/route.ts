@@ -21,9 +21,12 @@ export async function GET(req: Request) {
       seatIds: [...ids].sort((a, b) => a.localeCompare(b, "uk")),
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "db_error";
+    console.error("[occupied-seats]", e);
     return NextResponse.json(
-      { error: `Не вдалося завантажити зайнятість: ${message}` },
+      {
+        error:
+          "Не вдалося завантажити зайняті місця. Оновіть сторінку або спробуйте пізніше.",
+      },
       { status: 503 },
     );
   }

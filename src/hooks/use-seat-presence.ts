@@ -11,7 +11,9 @@ function unionPeers(peers: Map<string, Set<string>>): Record<string, boolean> {
 }
 
 const DRAFT_PING_MS =
-  Number(process.env.NEXT_PUBLIC_SEAT_DRAFT_PING_MS) || 90_000;
+  Number(process.env.NEXT_PUBLIC_SEAT_DRAFT_PING_MS) || 5_000;
+const PEER_STALE_MS =
+  Number(process.env.NEXT_PUBLIC_SEAT_PEER_STALE_MS) || 20_000;
 
 /**
  * Підключення до seat-sync-сервера: чернетки інших клієнтів + подія bookedPatch після збереження заявки.
@@ -31,16 +33,22 @@ export function useSeatPresence(opts: {
   /** Отримано `hello` від seat-sync — з’єднання справді працює. */
   const [livePresence, setLivePresence] = useState(false);
   const peersRef = useRef(new Map<string, Set<string>>());
+  const peerSeenAtRef = useRef(new Map<string, number>());
   const wsRef = useRef<WebSocket | null>(null);
   const patchRef = useRef(opts.onBookedPatch);
   const expiredRef = useRef(opts.onDraftHoldExpired);
   const selectedRef = useRef(opts.selectedSeatIds);
   const helloReceivedRef = useRef(false);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const staleSweepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
 
-  patchRef.current = opts.onBookedPatch;
-  expiredRef.current = opts.onDraftHoldExpired;
-  selectedRef.current = opts.selectedSeatIds;
+  useEffect(() => {
+    patchRef.current = opts.onBookedPatch;
+    expiredRef.current = opts.onDraftHoldExpired;
+    selectedRef.current = opts.selectedSeatIds;
+  }, [opts.onBookedPatch, opts.onDraftHoldExpired, opts.selectedSeatIds]);
 
   const url = process.env.NEXT_PUBLIC_SEAT_SYNC_WS?.trim();
 
@@ -51,14 +59,25 @@ export function useSeatPresence(opts: {
     }
   }
 
+  function clearStaleSweep() {
+    if (staleSweepIntervalRef.current != null) {
+      clearInterval(staleSweepIntervalRef.current);
+      staleSweepIntervalRef.current = null;
+    }
+  }
+
   useEffect(() => {
     if (!url || !opts.visitDateKey) {
       helloReceivedRef.current = false;
       clearPing();
+      clearStaleSweep();
       peersRef.current.clear();
-      setRemoteDraftSeatIds({});
-      setLivePresence(false);
-      return;
+      peerSeenAtRef.current.clear();
+      const resetId = window.setTimeout(() => {
+        setRemoteDraftSeatIds({});
+        setLivePresence(false);
+      }, 0);
+      return () => window.clearTimeout(resetId);
     }
 
     let closed = false;
@@ -80,6 +99,7 @@ export function useSeatPresence(opts: {
       helloReceivedRef.current = false;
       setLivePresence(false);
       clearPing();
+      clearStaleSweep();
 
       const ws = new WebSocket(url);
       wsRef.current = ws;
@@ -105,7 +125,9 @@ export function useSeatPresence(opts: {
 
         if (m.type === "hello") {
           peersRef.current.clear();
+          peerSeenAtRef.current.clear();
           const peers = m.peers;
+          const now = Date.now();
           if (peers && typeof peers === "object" && peers !== null) {
             for (const [cid, arr] of Object.entries(peers)) {
               if (!Array.isArray(arr)) continue;
@@ -113,6 +135,7 @@ export function useSeatPresence(opts: {
                 cid,
                 new Set(arr.filter((x): x is string => typeof x === "string")),
               );
+              peerSeenAtRef.current.set(cid, now);
             }
           }
           applyPeersToState();
@@ -124,6 +147,17 @@ export function useSeatPresence(opts: {
           pingIntervalRef.current = setInterval(() => {
             flushDraft(ws);
           }, DRAFT_PING_MS);
+          staleSweepIntervalRef.current = setInterval(() => {
+            const nowTs = Date.now();
+            let changed = false;
+            for (const [cid, seenAt] of peerSeenAtRef.current.entries()) {
+              if (nowTs - seenAt <= PEER_STALE_MS) continue;
+              peerSeenAtRef.current.delete(cid);
+              peersRef.current.delete(cid);
+              changed = true;
+            }
+            if (changed) applyPeersToState();
+          }, 2_000);
           return;
         }
 
@@ -132,6 +166,7 @@ export function useSeatPresence(opts: {
           typeof m.clientId === "string" &&
           Array.isArray(m.seatIds)
         ) {
+          peerSeenAtRef.current.set(m.clientId, Date.now());
           peersRef.current.set(
             m.clientId,
             new Set(m.seatIds.filter((x): x is string => typeof x === "string")),
@@ -141,6 +176,7 @@ export function useSeatPresence(opts: {
         }
 
         if (m.type === "peerLeft" && typeof m.clientId === "string") {
+          peerSeenAtRef.current.delete(m.clientId);
           peersRef.current.delete(m.clientId);
           applyPeersToState();
           return;
@@ -164,6 +200,7 @@ export function useSeatPresence(opts: {
         helloReceivedRef.current = false;
         setLivePresence(false);
         clearPing();
+        clearStaleSweep();
         if (closed) return;
         reconnectTimer = setTimeout(connect, 2500);
       };
@@ -184,6 +221,7 @@ export function useSeatPresence(opts: {
       helloReceivedRef.current = false;
       setLivePresence(false);
       clearPing();
+      clearStaleSweep();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       try {
         wsRef.current?.close();
@@ -192,6 +230,7 @@ export function useSeatPresence(opts: {
       }
       wsRef.current = null;
       peersRef.current.clear();
+      peerSeenAtRef.current.clear();
       setRemoteDraftSeatIds({});
     };
   }, [url, opts.visitDateKey]);

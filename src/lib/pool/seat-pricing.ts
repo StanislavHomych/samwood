@@ -2,12 +2,8 @@
  * Демо-тарифи за типом місця (грн / місце). Пізніше можна винести в БД або CMS.
  */
 export function priceForSeatId(seatId: string): number {
-  if (seatId.startsWith("L-")) return 420;
-  if (seatId.startsWith("S2-")) return 580;
-  if (seatId.startsWith("S3-")) return 520;
-  if (seatId.startsWith("G-")) return 750;
-  if (seatId.startsWith("B-") || seatId.startsWith("R-")) return 1100;
-  return 500;
+  void seatId;
+  return 0.1;
 }
 
 export function sumSeatPrices(seatIds: string[]): number {

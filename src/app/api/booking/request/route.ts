@@ -4,6 +4,7 @@ import { loadOccupiedSeatIdsForVisitDay } from "@/lib/booking/load-occupied-seat
 import { notifySeatSyncBooked } from "@/lib/booking/notify-seat-sync-booked";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
+import { sumSeatPrices } from "@/lib/pool/seat-pricing";
 
 export const runtime = "nodejs";
 
@@ -42,6 +43,7 @@ export async function POST(req: Request) {
   const { visitDate, visitDateKey, seatIds, fullName, phone, details } =
     parsed.data;
   const seatsJson = Object.fromEntries(seatIds.map((id) => [id, true]));
+  const amountKopiyky = Math.max(0, Math.round(sumSeatPrices(seatIds) * 100));
 
   try {
     const taken = await loadOccupiedSeatIdsForVisitDay(visitDate);
@@ -64,16 +66,24 @@ export async function POST(req: Request) {
       fullName,
       phone,
       paymentMethod,
+      paymentStatus: "requested",
+      amountKopiyky,
+      paidAt: null,
       details: details || null,
       seatsJson,
+      monobankInvoiceId: null,
+      paymentPayloadJson: null,
     });
     await repo.save(row);
     notifySeatSyncBooked({ visitDateKey, seatIds });
     return NextResponse.json({ id: row.id });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "db_error";
+    console.error("[booking-request]", e);
     return NextResponse.json(
-      { error: `Не вдалося зберегти заявку: ${message}` },
+      {
+        error:
+          "Не вдалося зберегти заявку. Спробуйте ще раз за кілька хвилин.",
+      },
       { status: 503 },
     );
   }

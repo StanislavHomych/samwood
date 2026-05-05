@@ -205,7 +205,7 @@ export function PoolMap({
         onPointerCancel={endPan}
         onClickCapture={onViewportClickCapture}
         className={[
-          "relative mx-auto h-[min(78vh,820px)] w-full max-w-[920px] overflow-hidden rounded-xl border select-none touch-none",
+          "relative mx-auto h-[min(62vh,620px)] w-full max-w-[920px] overflow-hidden rounded-xl border select-none touch-none sm:h-[min(78vh,820px)]",
           resortChrome
             ? "border-[#1b303d]/34 bg-[#a8bcc8]/88 shadow-[0_22px_50px_-16px_rgba(5,12,18,0.38)] ring-2 ring-teal-950/14"
             : "border-[#c9a962]/20 bg-[#0d0c0b] shadow-[0_32px_80px_-24px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(201,169,98,0.06)] ring-1 ring-white/[0.04]",
@@ -215,7 +215,7 @@ export function PoolMap({
         <div
           onPointerDown={(e) => e.stopPropagation()}
           className={[
-            "pointer-events-auto absolute left-2 right-2 top-2 z-20 flex items-start gap-1.5 rounded-lg p-1 shadow-sm sm:gap-2 sm:rounded-xl sm:p-1.5",
+            "pointer-events-auto absolute left-1.5 right-1.5 top-1.5 z-20 flex items-start gap-1 rounded-lg p-1 shadow-sm sm:left-2 sm:right-2 sm:top-2 sm:gap-2 sm:rounded-xl sm:p-1.5",
             resortChrome
               ? "border border-slate-300/50 bg-white/95"
               : "border border-white/12 bg-zinc-900/95",

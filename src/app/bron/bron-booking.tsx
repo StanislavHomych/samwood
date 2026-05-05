@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookingSidePanel } from "@/components/booking/booking-side-panel";
 import { useSeatPresence } from "@/hooks/use-seat-presence";
 import { LuxuryDatePicker } from "@/components/booking/luxury-date-picker";
@@ -19,12 +19,9 @@ export function BronBooking() {
   /** Спочатку календар відкритий; «Змінити дату» лише відкриває його знов — дата не стирається */
   const [calendarOpen, setCalendarOpen] = useState(true);
   /** Вибір місць на карті — за замовчуванням порожньо; скидається при зміні дня візиту */
-  const [selectedSeats, setSelectedSeats] = useState<Record<string, boolean>>(
-    {},
-  );
-  const [bookedSeatIds, setBookedSeatIds] = useState<Record<string, boolean>>(
-    {},
-  );
+  const [selectedSeats, setSelectedSeats] = useState<Record<string, boolean>>({});
+  const [bookedSeatIds, setBookedSeatIds] = useState<Record<string, boolean>>({});
+  const prevVisitDateKeyRef = useRef<string | null>(null);
 
   const dateLockedIn = selectedDate !== null && !calendarOpen;
 
@@ -84,6 +81,29 @@ export function BronBooking() {
 
   const presenceVisitKey = dateLockedIn ? visitDateKey : null;
 
+  const refreshBookedSeatIds = useCallback(
+    (targetVisitDateKey: string) => {
+      let cancelled = false;
+      fetch(
+        `/api/booking/occupied-seats?date=${encodeURIComponent(targetVisitDateKey)}`,
+      )
+        .then((r) => r.json())
+        .then((d: { seatIds?: string[] }) => {
+          if (cancelled) return;
+          const o: Record<string, boolean> = {};
+          for (const id of d.seatIds ?? []) o[id] = true;
+          setBookedSeatIds(o);
+        })
+        .catch(() => {
+          if (!cancelled) setBookedSeatIds({});
+        });
+      return () => {
+        cancelled = true;
+      };
+    },
+    [],
+  );
+
   const selectedSeatIds = useMemo(
     () =>
       Object.entries(selectedSeats)
@@ -101,33 +121,20 @@ export function BronBooking() {
   });
 
   useEffect(() => {
-    if (visitDateKey == null) return;
-    setSelectedSeats({});
+    const prevKey = prevVisitDateKeyRef.current;
+    if (prevKey && visitDateKey && prevKey !== visitDateKey) {
+      setSelectedSeats({});
+    }
+    prevVisitDateKeyRef.current = visitDateKey;
   }, [visitDateKey]);
 
   useEffect(() => {
     if (!visitDateKey) {
-      setBookedSeatIds({});
-      return;
+      const id = window.setTimeout(() => setBookedSeatIds({}), 0);
+      return () => window.clearTimeout(id);
     }
-    let cancelled = false;
-    fetch(
-      `/api/booking/occupied-seats?date=${encodeURIComponent(visitDateKey)}`,
-    )
-      .then((r) => r.json())
-      .then((d: { seatIds?: string[] }) => {
-        if (cancelled) return;
-        const o: Record<string, boolean> = {};
-        for (const id of d.seatIds ?? []) o[id] = true;
-        setBookedSeatIds(o);
-      })
-      .catch(() => {
-        if (!cancelled) setBookedSeatIds({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [visitDateKey]);
+    return refreshBookedSeatIds(visitDateKey);
+  }, [refreshBookedSeatIds, visitDateKey]);
 
   const seatsTotalUah = useMemo(
     () => sumSeatPrices(selectedSeatIds),
@@ -136,16 +143,27 @@ export function BronBooking() {
 
   const onSeatToggle = useCallback(
     (seatId: string) => {
-      if (bookedSeatIds[seatId]) return;
-      if (remoteDraftSeatIds[seatId]) return;
+      const currentlySelected = Boolean(selectedSeats[seatId]);
+      if (!currentlySelected && bookedSeatIds[seatId]) return;
+      if (!currentlySelected && remoteDraftSeatIds[seatId]) return;
       setSelectedSeats((prev) => ({ ...prev, [seatId]: !prev[seatId] }));
     },
-    [bookedSeatIds, remoteDraftSeatIds],
+    [bookedSeatIds, remoteDraftSeatIds, selectedSeats],
   );
 
   const clearSeatSelection = useCallback(() => {
     setSelectedSeats({});
   }, []);
+
+  const onBookingSaved = useCallback(
+    (seatIds: string[]) => {
+      onBookedPatch(seatIds);
+      if (visitDateKey) {
+        refreshBookedSeatIds(visitDateKey);
+      }
+    },
+    [onBookedPatch, refreshBookedSeatIds, visitDateKey],
+  );
 
   const seatSyncConfigured = Boolean(
     process.env.NEXT_PUBLIC_SEAT_SYNC_WS?.trim(),
@@ -253,6 +271,7 @@ export function BronBooking() {
                 selectedSeatIds={selectedSeatIds}
                 seatsTotalUah={seatsTotalUah}
                 onClearSeatSelection={clearSeatSelection}
+                onBookingSaved={onBookingSaved}
               />
             </div>
           ) : (

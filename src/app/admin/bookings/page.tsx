@@ -30,6 +30,15 @@ function labelPayment(m: string) {
   return map[m] ?? m;
 }
 
+function labelPaymentStatus(s: string | null) {
+  if (!s) return "—";
+  const map: Record<string, string> = {
+    paid: "Оплачено",
+    requested: "Очікує",
+  };
+  return map[s] ?? s;
+}
+
 function bookingsListHref(parts: { date?: string; payment?: string }) {
   const p = new URLSearchParams();
   if (parts.date) p.set("date", parts.date);
@@ -135,7 +144,7 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1150px] border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
               <th className="whitespace-nowrap px-4 py-3">Створено заявку</th>
@@ -143,6 +152,9 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
               <th className="min-w-[120px] px-4 py-3">Ім&apos;я</th>
               <th className="whitespace-nowrap px-4 py-3">Телефон</th>
               <th className="whitespace-nowrap px-4 py-3">Оплата</th>
+              <th className="whitespace-nowrap px-4 py-3">Статус</th>
+              <th className="whitespace-nowrap px-4 py-3">Invoice</th>
+              <th className="whitespace-nowrap px-4 py-3 text-right">Сума</th>
               <th className="whitespace-nowrap px-4 py-3 text-right">Місць</th>
               <th className="min-w-[200px] px-4 py-3">Місця</th>
               <th className="min-w-[140px] px-4 py-3">Деталі</th>
@@ -153,7 +165,7 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={12}
                   className="px-4 py-14 text-center text-sm font-medium text-zinc-500"
                 >
                   Немає заявок для обраних умов.
@@ -192,6 +204,25 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-zinc-700">
                       {labelPayment(r.paymentMethod)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-zinc-700">
+                      {labelPaymentStatus(r.paymentStatus)}
+                    </td>
+                    <td
+                      className="max-w-[180px] truncate px-4 py-3 font-mono text-[11px] text-zinc-700"
+                      title={r.monobankInvoiceId ?? ""}
+                    >
+                      {r.monobankInvoiceId ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">
+                      {typeof r.amountKopiyky === "number"
+                        ? (r.amountKopiyky / 100).toLocaleString("uk-UA", {
+                            style: "currency",
+                            currency: "UAH",
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })
+                        : "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">
                       {seatKeys.length}

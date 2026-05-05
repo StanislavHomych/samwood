@@ -7,6 +7,7 @@ import { config } from "dotenv";
 import { DataSource } from "typeorm";
 import { BookingRequest } from "../../entities/booking-request.entity";
 import { CreateBookingRequests1740000000000 } from "./migrations/1740000000000-CreateBookingRequests";
+import { AddMonobankPaymentFields1740000000002 } from "./migrations/1740000000002-AddMonobankPaymentFields";
 
 config({ path: path.join(process.cwd(), ".env.local") });
 config({ path: path.join(process.cwd(), ".env") });
@@ -20,7 +21,10 @@ export default new DataSource({
   type: "postgres",
   url,
   entities: [BookingRequest],
-  migrations: [CreateBookingRequests1740000000000],
+  migrations: [
+    CreateBookingRequests1740000000000,
+    AddMonobankPaymentFields1740000000002,
+  ],
   synchronize: false,
   logging: true,
 });
