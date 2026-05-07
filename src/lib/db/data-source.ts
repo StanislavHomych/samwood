@@ -10,14 +10,15 @@ const globalForDb = globalThis as unknown as {
 /** Паралельні виклики `initialize()` ламають метадані / з’єднання в Next dev. */
 let initPromise: Promise<DataSource> | null = null;
 
-/**
- * Репозиторій за **іменем** сутності — після Turbopack/HMR клас з іншого модуля
- * не збігається за посиланням з тим, що зареєстрував DataSource → EntityMetadataNotFoundError.
- */
+/** Репозиторій заявки з fallback на назву таблиці для dev/HMR edge cases. */
 export function getBookingRequestRepository(
   ds: DataSource,
 ): Repository<BookingRequest> {
-  return ds.getRepository("BookingRequest");
+  try {
+    return ds.getRepository(BookingRequestEntity) as Repository<BookingRequest>;
+  } catch {
+    return ds.getRepository("booking_requests") as Repository<BookingRequest>;
+  }
 }
 
 function createDataSource(): DataSource {
