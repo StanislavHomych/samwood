@@ -8,7 +8,7 @@ import {
 import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
 import { getDataSource } from "@/lib/db";
-import { sumSeatPrices } from "@/lib/pool/seat-pricing";
+import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
 
 export const runtime = "nodejs";
 
@@ -46,7 +46,10 @@ export async function POST(req: Request) {
 
   const { visitDate, visitDateKey, seatIds, fullName, phone, details } =
     parsed.data;
-  const amountKopiyky = Math.max(0, Math.round(sumSeatPrices(seatIds) * 100));
+  const amountKopiyky = Math.max(
+    0,
+    Math.round(sumSeatPricesForDate(seatIds, visitDateKey) * 100),
+  );
 
   try {
     const ds = await getDataSource();

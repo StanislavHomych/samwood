@@ -1,6 +1,10 @@
 "use client";
 
-import { seatPricingLegendRows } from "@/lib/pool/seat-zone-palette";
+import { LOUNGER_SWATCH } from "@/lib/pool/seat-zone-palette";
+import {
+  LOUNGER_PRICE_WEEKDAY_UAH,
+  LOUNGER_PRICE_WEEKEND_UAH,
+} from "@/lib/pool/seat-pricing";
 
 type SeatPricingLegendProps = {
   resortChrome?: boolean;
@@ -8,6 +12,8 @@ type SeatPricingLegendProps = {
   variant?: "standalone" | "mapOverlay";
   /** Додати зразки: заброньовано / чернетка іншого відвідувача. */
   occupancyLegend?: boolean;
+  /** Денний тариф на лежак для обраної дати; без нього — діапазон. */
+  loungerPriceUah?: number;
 };
 
 /** Легенда тарифів: зразок кольору + зона + ціна. */
@@ -15,8 +21,13 @@ export function SeatPricingLegend({
   resortChrome,
   variant = "standalone",
   occupancyLegend = false,
+  loungerPriceUah,
 }: SeatPricingLegendProps) {
   const isOverlay = variant === "mapOverlay";
+  const priceText =
+    loungerPriceUah != null
+      ? `${loungerPriceUah} ₴`
+      : `${LOUNGER_PRICE_WEEKDAY_UAH}–${LOUNGER_PRICE_WEEKEND_UAH} ₴`;
 
   if (isOverlay) {
     const panel = resortChrome
@@ -52,22 +63,19 @@ export function SeatPricingLegend({
           role="list"
           aria-label="Тарифи за зонами"
         >
-          {seatPricingLegendRows.map((row) => (
+          <span
+            role="listitem"
+            title={`Лежак — ${priceText}`}
+            aria-label={`Лежак, ${priceText}`}
+            className="inline-flex max-w-full shrink-0 items-center gap-1 sm:gap-1.5"
+          >
             <span
-              key={row.title}
-              role="listitem"
-              title={`${row.title} — ${row.price} ₴`}
-              aria-label={`${row.title}, ${row.price} гривень`}
-              className="inline-flex max-w-full shrink-0 items-center gap-1 sm:gap-1.5"
-            >
-              <span
-                className={`${sq} ${swatchZoneBorder}`}
-                style={{ backgroundColor: row.swatch }}
-                aria-hidden
-              />
-              <span className={`whitespace-nowrap ${priceOnly}`}>{row.price} ₴</span>
-            </span>
-          ))}
+              className={`${sq} ${swatchZoneBorder}`}
+              style={{ backgroundColor: LOUNGER_SWATCH }}
+              aria-hidden
+            />
+            <span className={`whitespace-nowrap ${priceOnly}`}>{priceText}</span>
+          </span>
         </div>
         {occupancyLegend ? (
           <>
@@ -107,34 +115,22 @@ export function SeatPricingLegend({
           : "border-[#c9a962]/22 bg-[#141210]/88 text-[#c9c4b8] ring-1 ring-white/[0.04]",
       ].join(" ")}
     >
-      {seatPricingLegendRows.map((row, i) => (
-        <span key={row.title} className="inline-flex items-center gap-1">
-          {i > 0 ? (
-            <span
-              className={
-                resortChrome ? "text-[#5a6a72]" : "text-[#6b6560]"
-              }
-              aria-hidden
-            >
-              ·
-            </span>
-          ) : null}
-          <span
-            className={[
-              "shrink-0 rounded-sm border border-black/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]",
-              "h-2.5 w-2.5",
-            ].join(" ")}
-            style={{ backgroundColor: row.swatch }}
-            aria-hidden
-          />
-          <span className="text-left">
-            {row.title} —{" "}
-            <strong className={resortChrome ? "text-teal-950" : "text-[#e8dcc8]"}>
-              {row.price} ₴
-            </strong>
-          </span>
+      <span className="inline-flex items-center gap-1">
+        <span
+          className={[
+            "shrink-0 rounded-sm border border-black/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]",
+            "h-2.5 w-2.5",
+          ].join(" ")}
+          style={{ backgroundColor: LOUNGER_SWATCH }}
+          aria-hidden
+        />
+        <span className="text-left">
+          Лежак —{" "}
+          <strong className={resortChrome ? "text-teal-950" : "text-[#e8dcc8]"}>
+            {priceText}
+          </strong>
         </span>
-      ))}
+      </span>
       {occupancyLegend ? (
         <>
           <span

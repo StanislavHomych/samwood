@@ -8,7 +8,7 @@ import { LuxuryDatePicker } from "@/components/booking/luxury-date-picker";
 import { VisitDateBar } from "@/components/booking/visit-date-bar";
 import { PoolMap } from "@/components/pool-map/pool-map";
 import { formatVisitDateKey } from "@/lib/dates/visit-date-key";
-import { sumSeatPrices } from "@/lib/pool/seat-pricing";
+import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
 
 function stripTime(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -137,8 +137,8 @@ export function BronBooking() {
   }, [refreshBookedSeatIds, visitDateKey]);
 
   const seatsTotalUah = useMemo(
-    () => sumSeatPrices(selectedSeatIds),
-    [selectedSeatIds],
+    () => (visitDateKey ? sumSeatPricesForDate(selectedSeatIds, visitDateKey) : 0),
+    [selectedSeatIds, visitDateKey],
   );
 
   const onSeatToggle = useCallback(
@@ -242,6 +242,7 @@ export function BronBooking() {
           <PoolMap
             wideLayout
             resortChrome
+            visitDateKey={visitDateKey ?? undefined}
             selectedSeats={selectedSeats}
             onSeatToggle={onSeatToggle}
             bookedSeatIds={bookedSeatIds}

@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { priceForSeatId } from "@/lib/pool/seat-pricing";
+import { loungerPriceForVisit } from "@/lib/pool/seat-pricing";
 import { Seat } from "./seat";
 import { SeatPricingLegend } from "./seat-pricing-legend";
 
@@ -34,6 +34,8 @@ type PoolMapProps = {
   className?: string;
   /** Займати всю ширину батьківської колонки (бронювання 70%) */
   wideLayout?: boolean;
+  /** День візиту `YYYY-MM-DD` — для денного тарифу на плитках/легенді. */
+  visitDateKey?: string;
   /** Світлий «курортний» хром панелі масштабу та рамки огляду */
   resortChrome?: boolean;
   /** Вибрані місця (ключ — id місця). Батько тримає `{}` за замовчуванням. */
@@ -51,6 +53,7 @@ export function PoolMap({
   className = "",
   wideLayout = false,
   resortChrome = false,
+  visitDateKey,
   selectedSeats,
   onSeatToggle,
   bookedSeatIds = {},
@@ -97,6 +100,10 @@ export function PoolMap({
   const rightOuterTop = useMemo(() => [1, 2, 3, 4], []);
   const rightOuterBottom = useMemo(() => [5, 6, 7, 8], []);
 
+  const loungerPrice = visitDateKey
+    ? loungerPriceForVisit(visitDateKey)
+    : undefined;
+
   const seatEl = useCallback(
     (n: number) => {
       const sid = `L-${n}`;
@@ -110,12 +117,12 @@ export function PoolMap({
           selected={!!selectedSeats[sid]}
           booked={!!bookedSeatIds[sid]}
           heldByOther={!!remoteDraftSeatIds[sid] && !selectedSeats[sid]}
-          priceUah={priceForSeatId(sid)}
+          priceUah={loungerPrice}
           onToggle={onSeatToggle}
         />
       );
     },
-    [selectedSeats, bookedSeatIds, remoteDraftSeatIds, onSeatToggle],
+    [selectedSeats, bookedSeatIds, remoteDraftSeatIds, onSeatToggle, loungerPrice],
   );
 
   const onPointerDown = useCallback(
@@ -298,6 +305,7 @@ export function PoolMap({
             resortChrome={resortChrome}
             variant="mapOverlay"
             occupancyLegend={showOccupancyLegend}
+            loungerPriceUah={loungerPrice}
           />
         </div>
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
 import { createMonobankInvoice, isMonobankConfigured } from "@/lib/payments/monobank";
 import { publicSiteBaseUrl } from "@/lib/site-url";
-import { sumSeatPrices } from "@/lib/pool/seat-pricing";
+import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const totalUah = sumSeatPrices(seatIds);
+  const totalUah = sumSeatPricesForDate(seatIds, visitDateKey);
   // Monobank не приймає суму меншу за 1 грн.
   const amountKopiyky = Math.max(100, Math.round(totalUah * 100));
 

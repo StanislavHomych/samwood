@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { formatSeatLineUk, priceForSeatId } from "@/lib/pool/seat-pricing";
+import { formatSeatLineUk, priceForSeatOnDate } from "@/lib/pool/seat-pricing";
 import { swatchForSeatId } from "@/lib/pool/seat-zone-palette";
 
 export type PaymentMethod = "monobank" | "cash" | "on_site";
@@ -312,7 +312,7 @@ export function BookingSidePanel({
                             </span>
                           </span>
                           <span className="shrink-0 tabular-nums font-semibold text-slate-700">
-                            {priceForSeatId(id).toLocaleString("uk-UA")} ₴
+                            {priceForSeatOnDate(id, visitDateKey).toLocaleString("uk-UA")} ₴
                           </span>
                         </li>
                       ))}

@@ -1,30 +1,35 @@
-/**
- * Тарифи за зонами (грн / місце). Пізніше можна винести в БД або CMS.
- * УВАГА: саме з цих значень рахується сума інвойсу Monobank —
- * перевірте/оновіть ціни перед запуском реальних оплат.
- */
-export const ZONE_PRICES_UAH = {
-  /** S2 — сектор 2 */
-  S2: 1,
-  /** S3 — сектор 3 */
-  S3: 1,
-  /** L — лежак (боковий ряд) */
-  L: 1,
-  /** G — тераса */
-  G: 1,
-  /** B — ліжак */
-  B: 1,
-  /** R — джакузі */
-  R: 1,
-} as const;
+import { parseVisitDateKey } from "@/lib/dates/visit-date-key";
 
-export function priceForSeatId(seatId: string): number {
-  const zone = seatId.split("-")[0] as keyof typeof ZONE_PRICES_UAH;
-  return ZONE_PRICES_UAH[zone] ?? ZONE_PRICES_UAH.L;
+/**
+ * Тарифи на лежак (грн). Ціна залежить від дня тижня візиту:
+ * Пн–Чт — будній тариф, Пт–Нд — тариф вихідного.
+ */
+export const LOUNGER_PRICE_WEEKDAY_UAH = 700; // Пн–Чт
+export const LOUNGER_PRICE_WEEKEND_UAH = 800; // Пт–Нд
+
+/** Пт/Сб/Нд за календарним днем візиту (UTC — як зберігаються дати візиту). */
+export function isWeekendVisitKey(visitDateKey: string): boolean {
+  const d = parseVisitDateKey(visitDateKey);
+  if (!d) return false;
+  const dow = d.getUTCDay(); // 0=Нд, 5=Пт, 6=Сб
+  return dow === 0 || dow === 5 || dow === 6;
 }
 
-export function sumSeatPrices(seatIds: string[]): number {
-  return seatIds.reduce((s, id) => s + priceForSeatId(id), 0);
+/** Ціна лежака на конкретний день візиту (`YYYY-MM-DD`). */
+export function loungerPriceForVisit(visitDateKey: string): number {
+  return isWeekendVisitKey(visitDateKey)
+    ? LOUNGER_PRICE_WEEKEND_UAH
+    : LOUNGER_PRICE_WEEKDAY_UAH;
+}
+
+/** Ціна конкретного місця на день візиту (наразі всі місця — лежаки). */
+export function priceForSeatOnDate(_seatId: string, visitDateKey: string): number {
+  return loungerPriceForVisit(visitDateKey);
+}
+
+/** Сума за обрані місця на день візиту. */
+export function sumSeatPricesForDate(seatIds: string[], visitDateKey: string): number {
+  return seatIds.length * loungerPriceForVisit(visitDateKey);
 }
 
 /** Підпис рядка в кошику / боковій панелі (укр.). */

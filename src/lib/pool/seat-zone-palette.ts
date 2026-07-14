@@ -1,5 +1,3 @@
-import { ZONE_PRICES_UAH } from "@/lib/pool/seat-pricing";
-
 /**
  * Палітра зон на карті + зразки в легенді тарифів.
  * Сектор 3 — коричневий; ряд (L) — жовтий: візуально далеко одне від одного.
@@ -47,13 +45,8 @@ export const seatZonePalette = {
 
 export type SeatVariantKey = keyof typeof seatZonePalette;
 
-export const seatPricingLegendRows = [
-  {
-    title: "Лежак",
-    price: ZONE_PRICES_UAH.L,
-    swatch: seatZonePalette.yellow.swatch,
-  },
-] as const;
+/** Колір зразка лежака в легенді тарифів (узгоджено з картою). */
+export const LOUNGER_SWATCH = seatZonePalette.yellow.swatch;
 
 /** Колір плашки в списку обраних місць (узгоджено з картою). */
 export function swatchForSeatId(seatId: string): string {
