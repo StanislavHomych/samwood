@@ -113,7 +113,7 @@ export function BronBooking() {
     [selectedSeats],
   );
 
-  const { remoteDraftSeatIds, livePresence } = useSeatPresence({
+  const { remoteDraftSeatIds, livePresence, clientId } = useSeatPresence({
     visitDateKey: presenceVisitKey,
     selectedSeatIds,
     onBookedPatch,
@@ -264,6 +264,7 @@ export function BronBooking() {
                 seatsTotalUah={seatsTotalUah}
                 onClearSeatSelection={clearSeatSelection}
                 onBookingSaved={onBookingSaved}
+                clientId={clientId}
               />
             </div>
           ) : (

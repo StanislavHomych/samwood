@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
 import { loadOccupiedSeatIdsForVisitDay } from "@/lib/booking/load-occupied-seat-ids";
+import { claimSeatHoldsForPayment, releaseSeatHolds } from "@/lib/booking/seat-holds";
 import { createMonobankInvoice, isMonobankConfigured } from "@/lib/payments/monobank";
 import { publicSiteBaseUrl } from "@/lib/site-url";
 import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
@@ -22,6 +23,16 @@ export async function POST(req: Request) {
   }
 
   const { visitDate, visitDateKey, seatIds, fullName, phone, email, details } = parsed.data;
+
+  // Id вкладки покупця (щоб дозволити захват ЙОГО ж холдів на час оплати).
+  // parseBookingCommonBody його відкидає, тому читаємо з raw окремо.
+  const requesterClientId =
+    typeof raw === "object" &&
+    raw !== null &&
+    "clientId" in raw &&
+    typeof (raw as { clientId: unknown }).clientId === "string"
+      ? (raw as { clientId: string }).clientId.trim().slice(0, 64)
+      : "";
 
   if (!isMonobankConfigured()) {
     return NextResponse.json(
@@ -53,6 +64,41 @@ export async function POST(req: Request) {
     console.error("[monobank-invoice] occupancy pre-check failed", occErr);
   }
 
+  const ref = `bron-${visitDateKey}-${Date.now().toString(36)}`;
+
+  // Атомарний захват холдів на час оплати: якщо місце зараз тримає ІНШИЙ
+  // активний клієнт — 409 ще ДО оплати (єдиного переможця обирає UNIQUE-індекс).
+  // Власні холди покупця переписуються на платіжні з довшим TTL, щоб пережити
+  // перехід на сторінку Monobank (heartbeat з вкладки там зникає).
+  // Працює лише коли фронт передав clientId; без нього — стара поведінка.
+  const payHoldId = `pay:${ref}`.slice(0, 64);
+  let holdsClaimed = false;
+  if (requesterClientId) {
+    try {
+      const claim = await claimSeatHoldsForPayment(
+        visitDateKey,
+        requesterClientId,
+        payHoldId,
+        seatIds,
+      );
+      if (!claim.ok) {
+        return NextResponse.json(
+          {
+            error:
+              "Частина місць щойно обрав інший відвідувач. Оновіть сторінку й оберіть інші.",
+            clashSeatIds: claim.conflicted,
+          },
+          { status: 409 },
+        );
+      }
+      holdsClaimed = true;
+    } catch (holdErr) {
+      // Best-effort: збій БД не блокує оплату (нижче все одно є атомарне
+      // закріплення місць після оплати через UNIQUE-індекс).
+      console.error("[monobank-invoice] payment hold claim failed", holdErr);
+    }
+  }
+
   const totalUah = sumSeatPricesForDate(seatIds, visitDateKey);
   // Monobank не приймає суму меншу за 1 грн.
   const amountKopiyky = Math.max(100, Math.round(totalUah * 100));
@@ -60,7 +106,6 @@ export async function POST(req: Request) {
   const base = publicSiteBaseUrl();
   const redirectUrl = `${base}/bron/pay-return`;
 
-  const ref = `bron-${visitDateKey}-${Date.now().toString(36)}`;
   let destination = `Samwood, ${visitDateKey} · ${seatIds.length} місць`;
   if (details) destination += ` · ${details.slice(0, 48)}`;
   destination = destination.slice(0, 128);
@@ -115,6 +160,11 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error("[monobank-invoice]", e);
+    // Інвойс не створено — знімаємо платіжні холди, щоб місця не висіли
+    // заблокованими і клієнт міг одразу повторити спробу.
+    if (holdsClaimed) {
+      await releaseSeatHolds(visitDateKey, payHoldId).catch(() => {});
+    }
     return NextResponse.json(
       {
         error:

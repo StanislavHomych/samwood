@@ -188,5 +188,5 @@ export function useSeatPresence(opts: {
     return () => window.clearTimeout(t);
   }, [selectionSig, visitDateKey, clientId, opts.selectedSeatIds]);
 
-  return { remoteDraftSeatIds, livePresence };
+  return { remoteDraftSeatIds, livePresence, clientId };
 }

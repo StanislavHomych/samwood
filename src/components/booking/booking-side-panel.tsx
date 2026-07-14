@@ -18,6 +18,8 @@ type BookingSidePanelProps = {
   seatsTotalUah: number;
   onClearSeatSelection: () => void;
   onBookingSaved?: (seatIds: string[]) => void;
+  /** Id вкладки (draft holds) — сервер захоплює ці ж холди на час оплати. */
+  clientId?: string;
 };
 
 const payments: { id: PaymentMethod; title: string; hint: string }[] = [
@@ -61,6 +63,7 @@ export function BookingSidePanel({
   seatsTotalUah,
   onClearSeatSelection,
   onBookingSaved,
+  clientId,
 }: BookingSidePanelProps) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -131,6 +134,7 @@ export function BookingSidePanel({
           phone,
           email,
           details,
+          clientId,
         }),
       });
       const data: unknown = await res.json().catch(() => ({}));
