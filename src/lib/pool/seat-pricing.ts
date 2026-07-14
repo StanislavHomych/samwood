@@ -5,17 +5,17 @@
  */
 export const ZONE_PRICES_UAH = {
   /** S2 — сектор 2 */
-  S2: 500,
+  S2: 1,
   /** S3 — сектор 3 */
-  S3: 500,
+  S3: 1,
   /** L — лежак (боковий ряд) */
-  L: 500,
+  L: 1,
   /** G — тераса */
-  G: 500,
+  G: 1,
   /** B — ліжак */
-  B: 500,
+  B: 1,
   /** R — джакузі */
-  R: 500,
+  R: 1,
 } as const;
 
 export function priceForSeatId(seatId: string): number {
