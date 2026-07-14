@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { NextResponse } from "next/server";
 import { parseVisitDateKey } from "@/lib/dates/visit-date-key";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
-import { notifySeatSyncBooked } from "@/lib/booking/notify-seat-sync-booked";
+import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { isAllowedPoolSeatId, MAX_SEATS_PER_BOOKING } from "@/lib/booking/seat-id";
 import { z } from "zod";
 
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
           amountKopiyky,
         };
         await repo.save(existing);
-        notifySeatSyncBooked({ visitDateKey, seatIds });
+        await releaseHoldsForSeats(visitDateKey, seatIds).catch(() => {});
         return NextResponse.json({ ok: true, id: existing.id, updated: true });
       }
     }
@@ -151,7 +151,7 @@ export async function POST(req: Request) {
       },
     });
     await repo.save(row);
-    notifySeatSyncBooked({ visitDateKey, seatIds });
+    await releaseHoldsForSeats(visitDateKey, seatIds).catch(() => {});
     return NextResponse.json({ ok: true, id: row.id });
   } catch (e) {
     const message = e instanceof Error ? e.message : "db_error";

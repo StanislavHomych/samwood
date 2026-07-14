@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "seat-sync": "node seat-sync-server.cjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -21,7 +20,6 @@
     "react-dom": "19.2.4",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.28",
-    "ws": "^8.20.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

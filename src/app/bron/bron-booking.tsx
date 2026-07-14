@@ -165,15 +165,11 @@ export function BronBooking() {
     [onBookedPatch, refreshBookedSeatIds, visitDateKey],
   );
 
-  const seatSyncConfigured = Boolean(
-    process.env.NEXT_PUBLIC_SEAT_SYNC_WS?.trim(),
-  );
-
   const [showSeatSyncOfflineHint, setShowSeatSyncOfflineHint] =
     useState(false);
 
   useEffect(() => {
-    if (!dateLockedIn || !presenceVisitKey || !seatSyncConfigured) {
+    if (!dateLockedIn || !presenceVisitKey) {
       setShowSeatSyncOfflineHint(false);
       return;
     }
@@ -183,12 +179,7 @@ export function BronBooking() {
     }
     const id = window.setTimeout(() => setShowSeatSyncOfflineHint(true), 2200);
     return () => window.clearTimeout(id);
-  }, [
-    dateLockedIn,
-    presenceVisitKey,
-    seatSyncConfigured,
-    livePresence,
-  ]);
+  }, [dateLockedIn, presenceVisitKey, livePresence]);
 
   useEffect(() => {
     if (!calendarOpen) return;

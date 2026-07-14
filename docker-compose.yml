@@ -26,18 +26,5 @@ services:
     ports:
       - "3000:3000"
 
-  seat-sync:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: ["npm", "run", "seat-sync"]
-    environment:
-      NODE_ENV: production
-      SEAT_SYNC_PORT: "3331"
-      SEAT_SYNC_SECRET: ${SEAT_SYNC_SECRET:?set SEAT_SYNC_SECRET}
-      SEAT_DRAFT_TTL_MS: ${SEAT_DRAFT_TTL_MS:-300000}
-    ports:
-      - "3331:3331"
-
 volumes:
   pool_pg_data:

@@ -2,254 +2,191 @@
 
 import { useEffect, useRef, useState } from "react";
 
-function unionPeers(peers: Map<string, Set<string>>): Record<string, boolean> {
-  const out: Record<string, boolean> = {};
-  for (const set of peers.values()) {
-    for (const id of set) out[id] = true;
+/** Інтервал опитування стану карти (booked + чужі утримання), мс. */
+const POLL_MS = Number(process.env.NEXT_PUBLIC_SEAT_POLL_MS) || 4_000;
+/** Скільки тримати власну «чернетку» без активності, поки не скинути її, мс. */
+const DRAFT_TTL_MS =
+  Number(process.env.NEXT_PUBLIC_SEAT_DRAFT_TTL_MS) || 5 * 60 * 1000;
+
+/** Стабільний id вкладки для утримання місць (draft hold). */
+function makeClientId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* ignore */
   }
-  return out;
+  return `c-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 }
 
-const DRAFT_PING_MS =
-  Number(process.env.NEXT_PUBLIC_SEAT_DRAFT_PING_MS) || 5_000;
-const PEER_STALE_MS =
-  Number(process.env.NEXT_PUBLIC_SEAT_PEER_STALE_MS) || 20_000;
-
 /**
- * Підключення до seat-sync-сервера: чернетки інших клієнтів + подія bookedPatch після збереження заявки.
- * Чернетку на сервері слід оновлювати після `hello` (інакше draft приходить до join — ігнорується).
- * Якщо `NEXT_PUBLIC_SEAT_SYNC_WS` не задано — повертає порожній remoteDraft без мережі.
+ * Полінг-синхронізація карти місць (заміна WebSocket-серверу — працює на Vercel + Neon).
+ *
+ * Кожні `POLL_MS`:
+ *  1) heartbeat-ом утримує обрані місця (POST /api/booking/seat-hold);
+ *  2) опитує стан (GET /api/booking/seat-state): підтверджені броні + чужі утримання.
+ *
+ * Повертає той самий контракт, що й раніше:
+ *  - `remoteDraftSeatIds` — місця, які зараз обирають інші;
+ *  - `livePresence` — чи відповідає сервер (останній цикл успішний).
+ * При закритті/зміні дати best-effort звільняє свої утримання.
  */
 export function useSeatPresence(opts: {
   visitDateKey: string | null;
   selectedSeatIds: string[];
   onBookedPatch: (seatIds: string[]) => void;
-  /** Сервер скинув чернетку після таймауту (наприклад 5 хв без оновлення). */
+  /** Власну чернетку скинуто після таймауту бездіяльності (за замовч. 5 хв). */
   onDraftHoldExpired?: () => void;
 }) {
   const [remoteDraftSeatIds, setRemoteDraftSeatIds] = useState<
     Record<string, boolean>
   >({});
-  /** Отримано `hello` від seat-sync — з’єднання справді працює. */
   const [livePresence, setLivePresence] = useState(false);
-  const peersRef = useRef(new Map<string, Set<string>>());
-  const peerSeenAtRef = useRef(new Map<string, number>());
-  const wsRef = useRef<WebSocket | null>(null);
+
+  const [clientId] = useState<string>(makeClientId);
+
   const patchRef = useRef(opts.onBookedPatch);
   const expiredRef = useRef(opts.onDraftHoldExpired);
   const selectedRef = useRef(opts.selectedSeatIds);
-  const helloReceivedRef = useRef(false);
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const staleSweepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
+  const lastInteractionRef = useRef(0);
+  /** Сигнатури останнього стану — щоб не оновлювати React-стан без змін. */
+  const heldSigRef = useRef("");
+  const bookedSigRef = useRef("");
 
   useEffect(() => {
     patchRef.current = opts.onBookedPatch;
     expiredRef.current = opts.onDraftHoldExpired;
-    selectedRef.current = opts.selectedSeatIds;
-  }, [opts.onBookedPatch, opts.onDraftHoldExpired, opts.selectedSeatIds]);
+  }, [opts.onBookedPatch, opts.onDraftHoldExpired]);
 
-  const url = process.env.NEXT_PUBLIC_SEAT_SYNC_WS?.trim();
+  const visitDateKey = opts.visitDateKey;
 
-  function clearPing() {
-    if (pingIntervalRef.current != null) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-    }
-  }
-
-  function clearStaleSweep() {
-    if (staleSweepIntervalRef.current != null) {
-      clearInterval(staleSweepIntervalRef.current);
-      staleSweepIntervalRef.current = null;
-    }
-  }
-
+  // Цикл опитування + heartbeat для активного дня візиту.
   useEffect(() => {
-    if (!url || !opts.visitDateKey) {
-      helloReceivedRef.current = false;
-      clearPing();
-      clearStaleSweep();
-      peersRef.current.clear();
-      peerSeenAtRef.current.clear();
-      const resetId = window.setTimeout(() => {
+    if (!visitDateKey) {
+      const id = window.setTimeout(() => {
         setRemoteDraftSeatIds({});
         setLivePresence(false);
       }, 0);
-      return () => window.clearTimeout(resetId);
+      return () => window.clearTimeout(id);
     }
 
-    let closed = false;
-    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    heldSigRef.current = "";
+    bookedSigRef.current = "";
 
-    const applyPeersToState = () => {
-      setRemoteDraftSeatIds(unionPeers(peersRef.current));
-    };
+    const tick = async () => {
+      // Власна чернетка «протухла» через бездіяльність — скидаємо і не утримуємо.
+      if (
+        selectedRef.current.length > 0 &&
+        lastInteractionRef.current > 0 &&
+        Date.now() - lastInteractionRef.current > DRAFT_TTL_MS
+      ) {
+        expiredRef.current?.();
+      }
 
-    const flushDraft = (ws: WebSocket) => {
-      if (ws.readyState !== WebSocket.OPEN || !helloReceivedRef.current) return;
-      ws.send(
-        JSON.stringify({ type: "draft", seatIds: selectedRef.current }),
-      );
-    };
-
-    const connect = () => {
-      if (closed) return;
-      helloReceivedRef.current = false;
-      setLivePresence(false);
-      clearPing();
-      clearStaleSweep();
-
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        ws.send(
-          JSON.stringify({
-            type: "join",
-            visitDateKey: opts.visitDateKey,
+      try {
+        await fetch("/api/booking/seat-hold", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: visitDateKey,
+            clientId,
+            seatIds: selectedRef.current,
           }),
+        });
+      } catch {
+        /* наступний цикл повторить */
+      }
+      if (cancelled) return;
+
+      try {
+        const res = await fetch(
+          `/api/booking/seat-state?date=${encodeURIComponent(visitDateKey)}&clientId=${encodeURIComponent(clientId)}`,
         );
-      };
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as {
+          bookedSeatIds?: string[];
+          heldSeatIds?: string[];
+        };
+        if (cancelled) return;
+        setLivePresence(true);
 
-      ws.onmessage = (ev) => {
-        let msg: unknown;
-        try {
-          msg = JSON.parse(String(ev.data));
-        } catch {
-          return;
-        }
-        if (!msg || typeof msg !== "object") return;
-        const m = msg as Record<string, unknown>;
-
-        if (m.type === "hello") {
-          peersRef.current.clear();
-          peerSeenAtRef.current.clear();
-          const peers = m.peers;
-          const now = Date.now();
-          if (peers && typeof peers === "object" && peers !== null) {
-            for (const [cid, arr] of Object.entries(peers)) {
-              if (!Array.isArray(arr)) continue;
-              peersRef.current.set(
-                cid,
-                new Set(arr.filter((x): x is string => typeof x === "string")),
-              );
-              peerSeenAtRef.current.set(cid, now);
-            }
-          }
-          applyPeersToState();
-          helloReceivedRef.current = true;
-          setLivePresence(true);
-          flushDraft(ws);
-
-          clearPing();
-          pingIntervalRef.current = setInterval(() => {
-            flushDraft(ws);
-          }, DRAFT_PING_MS);
-          staleSweepIntervalRef.current = setInterval(() => {
-            const nowTs = Date.now();
-            let changed = false;
-            for (const [cid, seenAt] of peerSeenAtRef.current.entries()) {
-              if (nowTs - seenAt <= PEER_STALE_MS) continue;
-              peerSeenAtRef.current.delete(cid);
-              peersRef.current.delete(cid);
-              changed = true;
-            }
-            if (changed) applyPeersToState();
-          }, 2_000);
-          return;
+        const heldIds = (data.heldSeatIds ?? []).filter(
+          (x): x is string => typeof x === "string",
+        );
+        const heldSig = heldIds.join(",");
+        if (heldSig !== heldSigRef.current) {
+          heldSigRef.current = heldSig;
+          const held: Record<string, boolean> = {};
+          for (const id of heldIds) held[id] = true;
+          setRemoteDraftSeatIds(held);
         }
 
-        if (
-          m.type === "peerDraft" &&
-          typeof m.clientId === "string" &&
-          Array.isArray(m.seatIds)
-        ) {
-          peerSeenAtRef.current.set(m.clientId, Date.now());
-          peersRef.current.set(
-            m.clientId,
-            new Set(m.seatIds.filter((x): x is string => typeof x === "string")),
-          );
-          applyPeersToState();
-          return;
+        const bookedIds = (data.bookedSeatIds ?? []).filter(
+          (x): x is string => typeof x === "string",
+        );
+        const bookedSig = bookedIds.join(",");
+        if (bookedIds.length > 0 && bookedSig !== bookedSigRef.current) {
+          bookedSigRef.current = bookedSig;
+          patchRef.current(bookedIds);
         }
-
-        if (m.type === "peerLeft" && typeof m.clientId === "string") {
-          peerSeenAtRef.current.delete(m.clientId);
-          peersRef.current.delete(m.clientId);
-          applyPeersToState();
-          return;
-        }
-
-        if (m.type === "bookedPatch" && Array.isArray(m.seatIds)) {
-          patchRef.current(
-            m.seatIds.filter((x): x is string => typeof x === "string"),
-          );
-          return;
-        }
-
-        if (m.type === "draftExpired") {
-          expiredRef.current?.();
-          return;
-        }
-      };
-
-      ws.onclose = () => {
-        wsRef.current = null;
-        helloReceivedRef.current = false;
-        setLivePresence(false);
-        clearPing();
-        clearStaleSweep();
-        if (closed) return;
-        reconnectTimer = setTimeout(connect, 2500);
-      };
-
-      ws.onerror = () => {
-        try {
-          ws.close();
-        } catch {
-          /* ignore */
-        }
-      };
+      } catch {
+        if (!cancelled) setLivePresence(false);
+      } finally {
+        if (!cancelled) timer = setTimeout(tick, POLL_MS);
+      }
     };
 
-    connect();
+    void tick();
 
     return () => {
-      closed = true;
-      helloReceivedRef.current = false;
-      setLivePresence(false);
-      clearPing();
-      clearStaleSweep();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      // Best-effort: звільнити свої утримання навіть під час вивантаження сторінки.
       try {
-        wsRef.current?.close();
+        const body = JSON.stringify({ date: visitDateKey, clientId });
+        if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+          navigator.sendBeacon(
+            "/api/booking/seat-hold/release",
+            new Blob([body], { type: "application/json" }),
+          );
+        } else {
+          void fetch("/api/booking/seat-hold/release", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+            keepalive: true,
+          }).catch(() => {});
+        }
       } catch {
         /* ignore */
       }
-      wsRef.current = null;
-      peersRef.current.clear();
-      peerSeenAtRef.current.clear();
       setRemoteDraftSeatIds({});
+      setLivePresence(false);
     };
-  }, [url, opts.visitDateKey]);
+  }, [visitDateKey, clientId]);
 
+  // Швидке утримання при зміні вибору (не чекаючи наступного циклу).
   const selectionSig = opts.selectedSeatIds.join("\0");
-
   useEffect(() => {
-    if (!opts.visitDateKey) return;
+    selectedRef.current = opts.selectedSeatIds;
+    lastInteractionRef.current = Date.now();
+    if (!visitDateKey) return;
     const t = window.setTimeout(() => {
-      if (!helloReceivedRef.current) return;
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(
-        JSON.stringify({ type: "draft", seatIds: selectedRef.current }),
-      );
+      void fetch("/api/booking/seat-hold", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: visitDateKey,
+          clientId,
+          seatIds: selectedRef.current,
+        }),
+      }).catch(() => {});
     }, 220);
-
     return () => window.clearTimeout(t);
-  }, [opts.visitDateKey, selectionSig]);
+  }, [selectionSig, visitDateKey, clientId, opts.selectedSeatIds]);
 
   return { remoteDraftSeatIds, livePresence };
 }

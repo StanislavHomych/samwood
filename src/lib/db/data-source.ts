@@ -2,6 +2,7 @@ import "reflect-metadata";
 import type { BookingRequest } from "@/entities/booking-request.entity";
 import { DataSource, type Repository } from "typeorm";
 import { BookingRequest as BookingRequestEntity } from "@/entities/booking-request.entity";
+import { SeatHold as SeatHoldEntity } from "@/entities/seat-hold.entity";
 
 const globalForDb = globalThis as unknown as {
   __typeormDataSource?: DataSource;
@@ -39,7 +40,7 @@ function createDataSource(): DataSource {
   return new DataSource({
     type: "postgres",
     url,
-    entities: [BookingRequestEntity],
+    entities: [BookingRequestEntity, SeatHoldEntity],
     synchronize,
     logging:
       process.env.TYPEORM_LOGGING === "1" ||

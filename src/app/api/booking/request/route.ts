@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { NextResponse } from "next/server";
 import { loadOccupiedSeatIdsForVisitDay } from "@/lib/booking/load-occupied-seat-ids";
-import { notifySeatSyncBooked } from "@/lib/booking/notify-seat-sync-booked";
+import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 import { sumSeatPrices } from "@/lib/pool/seat-pricing";
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
       paymentPayloadJson: null,
     });
     await repo.save(row);
-    notifySeatSyncBooked({ visitDateKey, seatIds });
+    await releaseHoldsForSeats(visitDateKey, seatIds).catch(() => {});
     return NextResponse.json({ id: row.id });
   } catch (e) {
     console.error("[booking-request]", e);
