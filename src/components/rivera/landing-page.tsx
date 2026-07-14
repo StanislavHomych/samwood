@@ -56,7 +56,7 @@ function Sidebar() {
           className="origin-center font-[family-name:var(--font-cormorant)] text-sm font-normal tracking-[0.48em] text-[#d4bc7a]/90 [writing-mode:vertical-rl] md:text-[15px] md:tracking-[0.52em]"
           style={{ textOrientation: "mixed" }}
         >
-          RIVERA
+          SAMWOOD
         </span>
       </div>
 
@@ -131,7 +131,7 @@ export function LandingPage() {
                 transition={{ duration: 1.05, delay: 0.55, ease: [0.22, 1, 0.36, 1] }}
                 className="font-[family-name:var(--font-cormorant)] text-base tracking-[0.5em] text-[#cdb87a] md:text-lg md:tracking-[0.52em]"
               >
-                ЗАТИШОК І ВОДА
+                ЛІС · ВОДА · ТИША
               </motion.p>
               <motion.h1
                 initial={{ opacity: 0, y: 48, filter: "blur(14px)" }}
@@ -139,7 +139,7 @@ export function LandingPage() {
                 transition={{ duration: 1.35, delay: 0.18, ease: [0.22, 1, 0.36, 1] }}
                 className="font-[family-name:var(--font-cormorant)] text-[2.3rem] font-light leading-[1.06] tracking-tight text-white sm:text-[2.75rem] md:text-[3.85rem] md:leading-[1.04] lg:text-[4.35rem]"
               >
-                Місце де час сповільнюється
+                Ліс, де час сповільнюється
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 28 }}
@@ -147,8 +147,8 @@ export function LandingPage() {
                 transition={{ duration: 1.05, delay: 0.42, ease: [0.22, 1, 0.36, 1] }}
                 className="max-w-xl text-base font-light leading-[1.8] tracking-wide text-[#d8d8d8]/93 md:text-lg md:leading-[1.78]"
               >
-                <strong className="font-medium text-[#f5f5dc]">Rivera</strong> — простір із дорослим басейном, авторським
-                ландшафтом і приватними зонами відпочинку. Ми створили атмосферу дорогої тиші — без зайвого шуму, лише ритм води й світла.
+                <strong className="font-medium text-[#f5f5dc]">Samwood</strong> — затишні A-frame будинки та гарячі чани серед
+                лісу під Рівне. Ми створили місце дорогої тиші — тільки дерево, вода й шелест крон замість міського шуму.
               </motion.p>
             </div>
           </div>
@@ -167,7 +167,7 @@ export function LandingPage() {
                 Простори, які вас чекають
               </h2>
               <p className="max-w-md text-sm font-light uppercase tracking-[0.28em] text-[#c9a962]/90 md:text-[15px] md:tracking-[0.32em]">
-                Від першого променя до вечірньої лампи над водою
+                Від ранкового туману до чанів під зорями
               </p>
             </motion.div>
 
@@ -184,8 +184,8 @@ export function LandingPage() {
                   Усе для відновлення без поспіху
                 </p>
                 <p className="font-[family-name:var(--font-montserrat)] text-[16px] font-light leading-[1.8] tracking-wide opacity-92 md:text-[17px]">
-                  Тераси з навісами, дорослий басейн із чітко відведеними зонами й увага до вашого простору. Rivera поєднує клубний
-                  підхід із відкритим горизонтом — аби ви відчули спокій, як у дорогій резиденції біля води.
+                  Панорамні A-frame будинки, гарячі чани просто неба й тераси серед дерев — усе для відпочинку без поспіху. Samwood поєднує
+                  приватність із відкритим лісом, аби ви відчули спокій, як у власному сховку далеко від міста.
                 </p>
               </motion.div>
               <motion.div
@@ -222,7 +222,7 @@ export function LandingPage() {
               viewport={{ once: true, amount: 0.4 }}
               transition={{ duration: 0.9, ease: easeLux }}
             >
-              Світ Rivera
+              Світ Samwood
             </motion.h2>
             {/* lg+: горизонтальний акордеон — hover розширює одну колонку, інші звужуються */}
             <div
@@ -328,14 +328,14 @@ export function LandingPage() {
             >
               <div className="mx-auto mb-8 h-px w-24 bg-[#c9a962]/55" aria-hidden />
               <p className="mb-6 font-[family-name:var(--font-cormorant)] text-xs uppercase tracking-[0.45em] text-[#c9a962] md:text-[13px]">
-                Rivera experience
+                Samwood experience
               </p>
               <h2 className="mb-8 font-[family-name:var(--font-cormorant)] text-[2rem] font-light leading-tight md:text-[2.55rem]">
                 Залишайтесь у просторі, де все враховано
               </h2>
               <p className="mb-10 max-w-xl text-[16px] font-light leading-[1.85] tracking-wide text-[#cfcfcf]/95 md:text-lg">
-                Персональне супроводження, чистота й готовність просторів — без зборів у чергах та без перевантажених локацій. Оберіть дату й
-                закріпть лежаки чи столик: інтерактивна карта дозволяє наочно обрати ряд і час візиту.
+                Персональне супроводження, чистота й готові до заїзду будинки — без черг і перевантажених локацій. Оберіть дату й
+                закріпіть своє місце: інтерактивна карта дозволяє наочно обрати зону та час візиту.
               </p>
               <p className="text-sm uppercase tracking-[0.28em] text-[#9a9a9a]">
                 Бронювання —{" "}
@@ -351,22 +351,28 @@ export function LandingPage() {
           <motion.div {...fadeUp} className="mx-auto flex max-w-[1400px] flex-col gap-10 md:flex-row md:justify-between md:gap-14">
             <div>
               <p className="font-[family-name:var(--font-cormorant)] text-[2rem] tracking-wide text-[#f5f5dc] md:text-[2.35rem]">
-                Rivera
+                Samwood
               </p>
               <p className="mt-5 max-w-md text-[15px] font-light leading-relaxed text-[#aaa] md:text-base">
-                Закритий комплекс дорослого басейну та просторів відпочинку. Тиша як стандарт, світло як акцент, ваша зона — без компромісів.
+                A-frame будинки, чани та відпочинок у лісі під Рівне. Тиша як стандарт, дерево й вода як акцент, ваш простір — без компромісів.
               </p>
             </div>
             <div className="flex flex-wrap gap-x-14 gap-y-6 text-[11px] uppercase tracking-[0.28em] text-[#c9a962]/70">
               <Link href="/bron" className="transition hover:text-[#c9a962]">
                 Забронювати
               </Link>
-              <span className="cursor-default hover:text-[#f5f5dc]/50">Instagram</span>
-              <span className="cursor-default hover:text-[#f5f5dc]/50">Telegram</span>
+              <a
+                href="https://www.instagram.com/samwood_rv"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition hover:text-[#c9a962]"
+              >
+                Instagram
+              </a>
             </div>
           </motion.div>
           <div className="mx-auto mt-14 max-w-[1400px] border-t border-white/5 pt-8 text-[11px] text-[#666]">
-            © {new Date().getFullYear()} Rivera. Усі права захищено.
+            © {new Date().getFullYear()} Samwood. Усі права захищено.
           </div>
         </footer>
       </div>

@@ -305,7 +305,7 @@ export function BronBooking() {
                   id="bron-date-heading"
                   className="text-[9px] font-semibold uppercase tracking-[0.24em] text-slate-600"
                 >
-                  Rivera · дата візиту
+                  Samwood · дата візиту
                 </p>
                 <h2 className="mt-2 text-xl font-semibold leading-snug text-slate-900">
                   {selectedDate

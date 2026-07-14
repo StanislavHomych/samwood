@@ -160,7 +160,7 @@ export function PayReturnClient() {
       {receipt ? (
         <div className="mt-8 w-full max-w-[360px] rounded-2xl border border-slate-300 bg-white p-5 text-left shadow-sm">
           <p className="font-mono text-[12px] font-bold tracking-wide text-slate-900">
-            RIVERA POOL
+            SAMWOOD
           </p>
           <p className="mt-1 font-mono text-[11px] text-slate-700">
             ==============================

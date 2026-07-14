@@ -15,9 +15,9 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "Rivera · закритий комплекс із басейном",
+  title: "Samwood · A-frame будинки та чани в лісі під Рівне",
   description:
-    "Rivera — преміум-простір дорослого басейну та території відпочинку.",
+    "Samwood — затишні A-frame будинки, гарячі чани та відпочинок у лісі неподалік Рівного.",
 };
 
 export default function RootLayout({

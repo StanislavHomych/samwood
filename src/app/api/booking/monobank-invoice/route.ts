@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   const redirectUrl = `${base}/bron/pay-return`;
 
   const ref = `bron-${visitDateKey}-${Date.now().toString(36)}`;
-  let destination = `Rivera басейн, ${visitDateKey} · ${seatIds.length} місць`;
+  let destination = `Samwood, ${visitDateKey} · ${seatIds.length} місць`;
   if (details) destination += ` · ${details.slice(0, 48)}`;
   destination = destination.slice(0, 128);
 

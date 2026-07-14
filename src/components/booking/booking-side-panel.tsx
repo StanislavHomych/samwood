@@ -30,7 +30,7 @@ const payments: { id: PaymentMethod; title: string; hint: string }[] = [
   {
     id: "on_site",
     title: "На місці",
-    hint: "Карткою або готівкою безпосередньо у Rivera",
+    hint: "Карткою або готівкою безпосередньо у Samwood",
   },
 ];
 
@@ -241,7 +241,7 @@ export function BookingSidePanel({
               </p>
               <p className="mt-3 text-sm font-medium leading-relaxed text-slate-700">
                 Заявку збережено. Найближчим часом з вами зв&apos;яжеться
-                адміністратор Rivera.
+                адміністратор Samwood.
               </p>
             </motion.div>
           ) : (

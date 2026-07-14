@@ -1,7 +1,7 @@
 import { PayReturnClient } from "./pay-return-client";
 
 export const metadata = {
-  title: "Оплата · Rivera",
+  title: "Оплата · Samwood",
   description: "Повернення після оплати Monobank",
 };
 

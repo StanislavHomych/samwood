@@ -24,7 +24,7 @@ export default async function AdminLayout({
             href="/admin/bookings"
             className="font-[family-name:var(--font-cormorant)] text-lg font-semibold text-teal-950"
           >
-            Rivera · адмін
+            Samwood · адмін
           </Link>
           <div className="flex shrink-0 items-center gap-3">
             <Link

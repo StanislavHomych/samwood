@@ -19,7 +19,7 @@ export default function BronPage() {
               href="/"
               className="font-[family-name:var(--font-cormorant)] text-[22px] font-semibold leading-none tracking-[0.22em] text-[#f0ebe3] transition hover:text-[#c9a962] sm:text-lg sm:tracking-[0.32em] md:text-xl"
             >
-              RIVERA
+              SAMWOOD
             </Link>
             <p className="mt-1 max-w-[170px] text-[10px] font-semibold uppercase leading-snug tracking-[0.18em] text-[#8a959c] sm:max-w-none sm:text-[11px] sm:tracking-[0.28em] md:text-[12px]">
               Дата візиту · карта місць · бронювання
