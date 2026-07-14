@@ -39,6 +39,7 @@ type CashBookingInput = {
   visitDateKey: string;
   fullName: string;
   phone: string;
+  email: string | null;
   paymentMethod: "cash" | "on_site";
   amountKopiyky: number;
   details: string | null;
@@ -64,15 +65,16 @@ export async function createConfirmedBookingWithSeats(
     // Чистий SQL (без getRepository за класом) — стабільно в dev/HMR і проді.
     const inserted: Array<{ id: string }> = await qr.query(
       `INSERT INTO "booking_requests"
-         ("visitDate", "fullName", "phone", "paymentMethod", "paymentStatus",
+         ("visitDate", "fullName", "phone", "email", "paymentMethod", "paymentStatus",
           "amountKopiyky", "paidAt", "details", "seatsJson",
           "monobankInvoiceId", "paymentPayloadJson")
-       VALUES ($1, $2, $3, $4, 'requested', $5, NULL, $6, $7::jsonb, NULL, NULL)
+       VALUES ($1, $2, $3, $4, $5, 'requested', $6, NULL, $7, $8::jsonb, NULL, NULL)
        RETURNING "id"`,
       [
         input.visitDate,
         input.fullName,
         input.phone,
+        input.email,
         input.paymentMethod,
         input.amountKopiyky,
         input.details,

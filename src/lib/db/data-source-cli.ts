@@ -11,6 +11,7 @@ import { CreateBookingRequests1740000000000 } from "./migrations/1740000000000-C
 import { CreateSeatBookings1740000000001 } from "./migrations/1740000000001-CreateSeatBookings";
 import { AddMonobankPaymentFields1740000000002 } from "./migrations/1740000000002-AddMonobankPaymentFields";
 import { CreateSeatHolds1740000000003 } from "./migrations/1740000000003-CreateSeatHolds";
+import { AddCustomerEmail1740000000004 } from "./migrations/1740000000004-AddCustomerEmail";
 
 config({ path: path.join(process.cwd(), ".env.local") });
 config({ path: path.join(process.cwd(), ".env") });
@@ -29,6 +30,7 @@ export default new DataSource({
     CreateSeatBookings1740000000001,
     AddMonobankPaymentFields1740000000002,
     CreateSeatHolds1740000000003,
+    AddCustomerEmail1740000000004,
   ],
   synchronize: false,
   logging: true,

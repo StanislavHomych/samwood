@@ -41,16 +41,6 @@ const fadeUpStrong = {
 function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-svh min-h-[100svh] w-[56px] flex-col justify-between border-r border-[#c9a962]/20 bg-[#0a0a0a] py-7 md:w-[72px] md:py-8">
-      <button
-        type="button"
-        className="mx-auto flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center gap-1 rounded border border-[#c9a962]/40 text-[#c9a962] transition hover:bg-[#c9a962]/10 md:h-11 md:w-11"
-        aria-label="Меню"
-      >
-        <span className="h-px w-5 bg-current md:w-[22px]" />
-        <span className="h-px w-5 bg-current md:w-[22px]" />
-        <span className="h-px w-5 bg-current md:w-[22px]" />
-      </button>
-
       <div className="flex min-h-0 flex-1 items-center justify-center py-10">
         <span
           className="origin-center font-[family-name:var(--font-cormorant)] text-sm font-normal tracking-[0.48em] text-[#d4bc7a]/90 [writing-mode:vertical-rl] md:text-[15px] md:tracking-[0.52em]"

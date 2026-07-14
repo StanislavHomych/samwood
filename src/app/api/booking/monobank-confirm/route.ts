@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { formatVisitDateKey, parseVisitDateKey } from "@/lib/dates/visit-date-key";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 import { claimSeatsForPaidBooking } from "@/lib/booking/seat-bookings";
+import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-email";
 import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { isAllowedPoolSeatId, MAX_SEATS_PER_BOOKING } from "@/lib/booking/seat-id";
 import { getMonobankInvoiceStatus, isMonobankConfigured } from "@/lib/payments/monobank";
@@ -20,6 +21,7 @@ const confirmBodySchema = z
       .max(MAX_SEATS_PER_BOOKING, `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`),
     fullName: z.string().trim().max(200).optional().default(""),
     phone: z.string().trim().min(5, "Не вказано телефон").max(32, "Не вказано телефон"),
+    email: z.string().trim().email().max(200).optional().default(""),
     details: z.string().trim().max(2000).optional().default(""),
     paymentMethod: z.literal("monobank").optional().default("monobank"),
     // Клієнтська сума — лише для аудиту; фактична сума береться з Monobank.
@@ -106,6 +108,7 @@ export async function POST(req: Request) {
         existing.fullName = body.fullName || existing.fullName || "Без імені";
       }
       if (!existing.phone) existing.phone = body.phone;
+      if (!existing.email && body.email) existing.email = body.email;
       if (!existing.details && body.details) existing.details = body.details;
 
       // Закріплюємо місця за оплаченою бронню (атомарно через UNIQUE-індекс).
@@ -128,6 +131,19 @@ export async function POST(req: Request) {
       await repo.save(existing);
 
       await releaseHoldsForSeats(rowKey, seatsToClaim).catch(() => {});
+
+      await deliverBookingConfirmationOnce(ds, {
+        id: existing.id,
+        email: existing.email,
+        fullName: existing.fullName,
+        phone: existing.phone,
+        visitDateKey: rowKey,
+        seatIds: seatsToClaim,
+        amountKopiyky: existing.amountKopiyky,
+        paymentMethod: existing.paymentMethod,
+        details: existing.details,
+      });
+
       return NextResponse.json({
         ok: true,
         id: existing.id,
@@ -142,6 +158,7 @@ export async function POST(req: Request) {
       visitDate,
       fullName: body.fullName || "Без імені",
       phone: body.phone,
+      email: body.email || null,
       paymentMethod: "monobank",
       paymentStatus: "paid",
       monobankInvoiceId: invoice.invoiceId,
@@ -174,6 +191,19 @@ export async function POST(req: Request) {
     }
 
     await releaseHoldsForSeats(body.visitDateKey, seatIds).catch(() => {});
+
+    await deliverBookingConfirmationOnce(ds, {
+      id: row.id,
+      email: row.email,
+      fullName: row.fullName,
+      phone: row.phone,
+      visitDateKey: body.visitDateKey,
+      seatIds,
+      amountKopiyky: row.amountKopiyky,
+      paymentMethod: row.paymentMethod,
+      details: row.details,
+    });
+
     return NextResponse.json({ ok: true, id: row.id, seatConflicts: conflicted });
   } catch (e) {
     const message = e instanceof Error ? e.message : "db_error";

@@ -20,6 +20,9 @@ export class BookingRequest {
   @Column({ type: "varchar", length: 32 })
   phone!: string;
 
+  @Column({ type: "varchar", length: 200, nullable: true })
+  email!: string | null;
+
   @Column({ type: "varchar", length: 32 })
   paymentMethod!: string;
 
@@ -34,6 +37,10 @@ export class BookingRequest {
 
   @Column({ type: "timestamptz", nullable: true })
   paidAt!: Date | null;
+
+  /** Коли надіслано лист-підтвердження клієнту (для ідемпотентності). */
+  @Column({ type: "timestamptz", nullable: true })
+  confirmationEmailSentAt!: Date | null;
 
   @Column({ type: "text", nullable: true })
   details!: string | null;

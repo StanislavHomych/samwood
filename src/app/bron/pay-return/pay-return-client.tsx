@@ -12,6 +12,7 @@ type PaymentReceipt = {
   seatIds: string[];
   fullName: string;
   phone: string;
+  email?: string;
   details?: string;
   paymentMethod: "monobank";
   amountKopiyky: number;
@@ -48,6 +49,10 @@ function parseReceipt(raw: string): PaymentReceipt | null {
       typeof (parsed as { phone?: unknown }).phone === "string"
         ? (parsed as { phone: string }).phone
         : "";
+    const email =
+      typeof (parsed as { email?: unknown }).email === "string"
+        ? (parsed as { email: string }).email
+        : "";
     const details =
       typeof (parsed as { details?: unknown }).details === "string"
         ? (parsed as { details: string }).details
@@ -71,6 +76,7 @@ function parseReceipt(raw: string): PaymentReceipt | null {
       seatIds,
       fullName,
       phone,
+      email,
       details,
       paymentMethod: "monobank",
       amountKopiyky,
@@ -171,6 +177,7 @@ export function PayReturnClient() {
             <p>Візит: {formatVisitDateKeyUk(receipt.visitDateKey)}</p>
             <p>Клієнт: {receipt.fullName || "-"}</p>
             <p>Телефон: {receipt.phone}</p>
+            {receipt.email ? <p>Email: {receipt.email}</p> : null}
             <p>Оплата: MONOBANK</p>
             <p>Invoice: {receipt.invoiceId ?? "-"}</p>
           </div>

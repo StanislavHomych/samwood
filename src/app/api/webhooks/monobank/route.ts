@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { NextResponse } from "next/server";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 import { claimSeatsForPaidBooking } from "@/lib/booking/seat-bookings";
+import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-email";
 import { formatVisitDateKey } from "@/lib/dates/visit-date-key";
 import {
   isMonobankConfigured,
@@ -72,6 +73,8 @@ export async function POST(req: Request) {
       row.paymentStatus = next;
     }
     let conflicted: string[] = [];
+    const rowKey = formatVisitDateKey(row.visitDate);
+    const rowSeatIds = Object.keys(row.seatsJson ?? {});
     if (status === "success") {
       row.paidAt =
         typeof payload.modifiedDate === "string" && !Number.isNaN(new Date(payload.modifiedDate).getTime())
@@ -80,8 +83,6 @@ export async function POST(req: Request) {
       if (typeof payload.amount === "number") row.amountKopiyky = payload.amount;
 
       // Закріплюємо місця за оплаченою бронню (атомарно через UNIQUE-індекс).
-      const rowKey = formatVisitDateKey(row.visitDate);
-      const rowSeatIds = Object.keys(row.seatsJson ?? {});
       if (rowSeatIds.length) {
         ({ conflicted } = await claimSeatsForPaidBooking(ds, row.id, rowKey, rowSeatIds));
       }
@@ -93,6 +94,21 @@ export async function POST(req: Request) {
       ...(conflicted.length ? { seatConflicts: conflicted } : {}),
     };
     await repo.save(row);
+
+    // Лист-підтвердження клієнту після успішної оплати (один раз на бронь).
+    if (status === "success") {
+      await deliverBookingConfirmationOnce(ds, {
+        id: row.id,
+        email: row.email,
+        fullName: row.fullName,
+        phone: row.phone,
+        visitDateKey: rowKey,
+        seatIds: rowSeatIds,
+        amountKopiyky: row.amountKopiyky,
+        paymentMethod: row.paymentMethod,
+        details: row.details,
+      });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {

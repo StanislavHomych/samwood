@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,10 +15,12 @@ import { SeatPricingLegend } from "./seat-pricing-legend";
 const MAP_W = 704;
 const PLAN_H = 560;
 
-const SCALE_MIN = 0.5;
+const SCALE_MIN = 0.3;
 const SCALE_MAX = 2;
 const SCALE_STEP = 0.1;
 const DRAG_THRESHOLD_PX = 5;
+/** Відступ від країв при авто-вписуванні карти у видиму область. */
+const FIT_MARGIN = 0.96;
 
 function range(a: number, b: number): number[] {
   const out: number[] = [];
@@ -74,17 +77,40 @@ export function PoolMap({
   } | null>(null);
 
   const viewportRef = useRef<HTMLDivElement>(null);
+  /** Розмір самої карти (для авто-вписування у видиму область). */
+  const contentRef = useRef<HTMLDivElement>(null);
+  /** Користувач сам змінив масштаб — більше не перебиваємо авто-fit'ом. */
+  const userZoomedRef = useRef(false);
 
   /** Активні вказівники (палець/миша) для pinch-zoom на телефоні. */
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
 
   const zoomIn = useCallback(() => {
+    userZoomedRef.current = true;
     setScale((s) => clamp(Number((s + SCALE_STEP).toFixed(2)), SCALE_MIN, SCALE_MAX));
   }, []);
 
   const zoomOut = useCallback(() => {
+    userZoomedRef.current = true;
     setScale((s) => clamp(Number((s - SCALE_STEP).toFixed(2)), SCALE_MIN, SCALE_MAX));
+  }, []);
+
+  /** Вписати всю карту у видиму область (масштаб + центрування). */
+  const fitToViewport = useCallback(() => {
+    const vp = viewportRef.current;
+    const content = contentRef.current;
+    if (!vp || !content) return;
+    const vw = vp.clientWidth;
+    const vh = vp.clientHeight;
+    // offsetWidth/Height — розмір ДО transform-scale, тож рахунок коректний.
+    const cw = content.offsetWidth || MAP_W;
+    const ch = content.offsetHeight || PLAN_H;
+    if (!vw || !vh || !cw || !ch) return;
+    const fit = Math.min(vw / cw, vh / ch) * FIT_MARGIN;
+    setScale(clamp(Number(fit.toFixed(3)), SCALE_MIN, SCALE_MAX));
+    setPanX(0);
+    setPanY(0);
   }, []);
 
   // 60 лежаків навколо басейну (дзеркальне розташування).
@@ -155,6 +181,7 @@ export function PoolMap({
 
     // Двопальцевий pinch — масштаб від відношення відстаней між пальцями.
     if (pointersRef.current.size >= 2 && pinchRef.current) {
+      userZoomedRef.current = true;
       const [a, b] = [...pointersRef.current.values()];
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
       const next = clamp(
@@ -215,6 +242,7 @@ export function PoolMap({
     if (!el) return;
     const wheelHandler = (e: WheelEvent) => {
       e.preventDefault();
+      userZoomedRef.current = true;
       const delta = e.deltaY > 0 ? -SCALE_STEP * 0.8 : SCALE_STEP * 0.8;
       setScale((s) =>
         clamp(Number((s + delta).toFixed(2)), SCALE_MIN, SCALE_MAX),
@@ -223,6 +251,20 @@ export function PoolMap({
     el.addEventListener("wheel", wheelHandler, { passive: false });
     return () => el.removeEventListener("wheel", wheelHandler);
   }, []);
+
+  /** Стартовий масштаб — уся карта у видимій області; повтор при зміні розміру/повороті. */
+  useLayoutEffect(() => {
+    fitToViewport();
+    const onResize = () => {
+      if (!userZoomedRef.current) fitToViewport();
+    };
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, [fitToViewport]);
 
   const stripCol = "flex flex-col justify-between rounded-lg bg-zinc-100/90 px-1.5 py-2 ring-1 ring-zinc-200/70";
   const stripRow = "flex items-center gap-1.5 rounded-lg bg-zinc-100/90 px-2 py-1.5 ring-1 ring-zinc-200/70";
@@ -320,6 +362,7 @@ export function PoolMap({
             }}
           >
             <div
+              ref={contentRef}
               className="relative overflow-hidden bg-white shadow-md ring-1 ring-black/[0.06]"
               style={{
                 width: MAP_W,

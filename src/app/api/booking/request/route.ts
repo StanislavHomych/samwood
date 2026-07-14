@@ -7,6 +7,7 @@ import {
 } from "@/lib/booking/seat-bookings";
 import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
+import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-email";
 import { getDataSource } from "@/lib/db";
 import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
 
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   }
 
-  const { visitDate, visitDateKey, seatIds, fullName, phone, details } =
+  const { visitDate, visitDateKey, seatIds, fullName, phone, email, details } =
     parsed.data;
   const amountKopiyky = Math.max(
     0,
@@ -75,6 +76,7 @@ export async function POST(req: Request) {
       visitDateKey,
       fullName,
       phone,
+      email: email || null,
       paymentMethod,
       amountKopiyky,
       details: details || null,
@@ -82,6 +84,20 @@ export async function POST(req: Request) {
     });
 
     await releaseHoldsForSeats(visitDateKey, seatIds).catch(() => {});
+
+    // Лист-підтвердження клієнту (best-effort, не блокує відповідь критично).
+    await deliverBookingConfirmationOnce(ds, {
+      id,
+      email: email || null,
+      fullName,
+      phone,
+      visitDateKey,
+      seatIds,
+      amountKopiyky,
+      paymentMethod,
+      details: details || null,
+    });
+
     return NextResponse.json({ id });
   } catch (e) {
     if (e instanceof SeatConflictError) {

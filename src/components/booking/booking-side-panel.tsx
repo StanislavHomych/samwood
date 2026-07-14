@@ -26,12 +26,6 @@ const payments: { id: PaymentMethod; title: string; hint: string }[] = [
     title: "Онлайн-оплата",
     hint: "Картка, Apple Pay або Google Pay — на сторінці вашого банку",
   },
-  { id: "cash", title: "Готівка", hint: "Оплата при заїзді на рецепції" },
-  {
-    id: "on_site",
-    title: "На місці",
-    hint: "Карткою або готівкою безпосередньо у Samwood",
-  },
 ];
 
 function formatDateUk(d: Date) {
@@ -70,6 +64,7 @@ export function BookingSidePanel({
 }: BookingSidePanelProps) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("monobank");
   const [details, setDetails] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -94,6 +89,7 @@ export function BookingSidePanel({
             seatIds: selectedSeatIds,
             fullName: name,
             phone,
+            email,
             details,
             paymentMethod: payment,
           }),
@@ -133,6 +129,7 @@ export function BookingSidePanel({
           seatIds: selectedSeatIds,
           fullName: name,
           phone,
+          email,
           details,
         }),
       });
@@ -179,6 +176,7 @@ export function BookingSidePanel({
               seatIds: selectedSeatIds,
               fullName: name,
               phone,
+              email,
               details,
               paymentMethod: "monobank",
               amountKopiyky,
@@ -358,6 +356,23 @@ export function BookingSidePanel({
                   placeholder="+380 …"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[15px] font-semibold text-slate-900 outline-none transition placeholder:text-xs placeholder:font-medium placeholder:text-slate-400 focus:border-teal-600 focus:outline-none"
                 />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-600">
+                  Email
+                </span>
+                <input
+                  required
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[15px] font-semibold text-slate-900 outline-none transition placeholder:text-xs placeholder:font-medium placeholder:text-slate-400 focus:border-teal-600 focus:outline-none"
+                />
+                <span className="mt-1.5 block text-[10px] font-medium text-slate-500">
+                  Надішлемо деталі бронювання на цю пошту
+                </span>
               </label>
 
               <div>

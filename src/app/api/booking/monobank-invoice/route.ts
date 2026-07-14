@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   }
 
-  const { visitDate, visitDateKey, seatIds, fullName, phone, details } = parsed.data;
+  const { visitDate, visitDateKey, seatIds, fullName, phone, email, details } = parsed.data;
 
   if (!isMonobankConfigured()) {
     return NextResponse.json(
@@ -65,6 +65,7 @@ export async function POST(req: Request) {
           visitDate,
           fullName,
           phone,
+          email: email || null,
           paymentMethod: "monobank",
           paymentStatus: "requested",
           monobankInvoiceId: invoiceId,

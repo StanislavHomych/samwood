@@ -254,6 +254,7 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
               <th className="whitespace-nowrap px-4 py-3">Дата візиту</th>
               <th className="min-w-[120px] px-4 py-3">Ім&apos;я</th>
               <th className="whitespace-nowrap px-4 py-3">Телефон</th>
+              <th className="min-w-[160px] px-4 py-3">Email</th>
               <th className="whitespace-nowrap px-4 py-3">Оплата</th>
               <th className="whitespace-nowrap px-4 py-3">Статус</th>
               <th className="whitespace-nowrap px-4 py-3">Invoice</th>
@@ -268,7 +269,7 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={12}
+                  colSpan={13}
                   className="px-4 py-14 text-center text-sm font-medium text-zinc-500"
                 >
                   Немає заявок для обраних умов.
@@ -298,6 +299,18 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
                           className="font-semibold text-teal-800 underline-offset-2 hover:text-teal-950 hover:underline"
                         >
                           {r.phone}
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-zinc-700">
+                      {r.email?.trim() ? (
+                        <a
+                          href={`mailto:${r.email}`}
+                          className="font-semibold text-teal-800 underline-offset-2 hover:text-teal-950 hover:underline"
+                        >
+                          {r.email}
                         </a>
                       ) : (
                         "—"

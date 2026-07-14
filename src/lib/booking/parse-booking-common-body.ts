@@ -8,6 +8,7 @@ export type BookingCommonBody = {
   seatIds: string[];
   fullName: string;
   phone: string;
+  email: string;
   details: string;
 };
 
@@ -22,6 +23,7 @@ const bookingCommonSchema = z
       .max(MAX_SEATS_PER_BOOKING, `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`),
     fullName: z.string().trim().min(2, "Вкажіть повне ім'я").max(200, "Вкажіть повне ім'я"),
     phone: z.string().trim().min(5, "Вкажіть телефон").max(32, "Вкажіть телефон"),
+    email: z.string().trim().email("Вкажіть коректний email").max(200, "Задовгий email"),
     details: z.string().trim().max(2000).optional().default(""),
   })
   .strip();
@@ -34,7 +36,7 @@ export function parseBookingCommonBody(raw: unknown):
   if (!parsed.success) {
     return { ok: false, error: "Некоректний JSON", status: 400 };
   }
-  const { visitDateKey, seatIds, fullName, phone, details } = parsed.data;
+  const { visitDateKey, seatIds, fullName, phone, email, details } = parsed.data;
 
   const visitDate = parseVisitDateKey(visitDateKey);
   if (!visitDate) {
@@ -56,6 +58,7 @@ export function parseBookingCommonBody(raw: unknown):
       seatIds: [...seen],
       fullName,
       phone,
+      email,
       details,
     },
   };
