@@ -1,37 +1,18 @@
 import "reflect-metadata";
-import { getBookingRequestRepository, getDataSource } from "@/lib/db";
-import { nextVisitDay } from "@/lib/dates/visit-date-key";
+import { getDataSource } from "@/lib/db";
+import { loadBookedSeatIds } from "@/lib/booking/seat-bookings";
 
 /**
- * Усі місця, уже зайняті підтвердженими заявками на цей календарний день візиту.
+ * Місця, зайняті підтвердженими бронюваннями на календарний день візиту (`YYYY-MM-DD`).
  *
- * Готівка / оплата на місці — це підтверджені брони (займають місце одразу).
- * Онлайн (Monobank) враховуємо лише як оплачені: неоплачений рахунок (створений
- * інвойс, але клієнт не завершив оплату) НЕ має тримати місце вічно — інакше
- * покинута оплата назавжди блокує місце для всіх.
+ * Джерело правди — таблиця `seat_bookings` з `UNIQUE(visitDate, seatId)`:
+ * рядок туди пишеться атомарно при підтвердженні броні (готівка/на місці — одразу,
+ * monobank — після оплати), тож подвійне бронювання неможливе, а «зайнятість»
+ * на карті завжди узгоджена з фактичними бронями.
  */
 export async function loadOccupiedSeatIdsForVisitDay(
-  visitDayStart: Date,
+  visitDateKey: string,
 ): Promise<Set<string>> {
-  const end = nextVisitDay(visitDayStart);
-
   const ds = await getDataSource();
-  const rows = await getBookingRequestRepository(ds)
-    .createQueryBuilder("b")
-    .where("b.visitDate >= :s", { s: visitDayStart })
-    .andWhere("b.visitDate < :e", { e: end })
-    .andWhere(
-      "(b.paymentMethod <> :mono OR b.paymentStatus = :paid)",
-      { mono: "monobank", paid: "paid" },
-    )
-    .getMany();
-
-  const out = new Set<string>();
-  for (const r of rows) {
-    if (!r.seatsJson || typeof r.seatsJson !== "object") continue;
-    for (const [k, v] of Object.entries(r.seatsJson)) {
-      if (v) out.add(k);
-    }
-  }
-  return out;
+  return loadBookedSeatIds(ds, visitDateKey);
 }

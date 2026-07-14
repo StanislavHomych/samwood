@@ -72,6 +72,10 @@ export function PoolMap({
 
   const viewportRef = useRef<HTMLDivElement>(null);
 
+  /** Активні вказівники (палець/миша) для pinch-zoom на телефоні. */
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
+
   const zoomIn = useCallback(() => {
     setScale((s) => clamp(Number((s + SCALE_STEP).toFixed(2)), SCALE_MIN, SCALE_MAX));
   }, []);
@@ -80,11 +84,11 @@ export function PoolMap({
     setScale((s) => clamp(Number((s - SCALE_STEP).toFixed(2)), SCALE_MIN, SCALE_MAX));
   }, []);
 
-  // 60 лежаків навколо басейну (за годинниковою стрілкою від правого краю).
-  // Праворуч — дві колонки (1–8 зовні, 9–16 всередині), низ 17–30,
-  // ліворуч — дві колонки (31–39 всередині, 40–45 зовні), верх 46–60.
-  const topRow = useMemo(() => range(46, 60).reverse(), []); // 60 → 46 (зліва направо)
-  const bottomRow = useMemo(() => range(17, 30).reverse(), []); // 30 → 17 (зліва направо)
+  // 60 лежаків навколо басейну (дзеркальне розташування).
+  // Ліворуч — дві колонки (1–8 зовні, 9–16 всередині), низ 17–30,
+  // праворуч — дві колонки (31–39 всередині, 40–45 зовні), верх 46–60.
+  const topRow = useMemo(() => range(46, 60), []); // 46 → 60 (зліва направо)
+  const bottomRow = useMemo(() => range(17, 30), []); // 17 → 30 (зліва направо)
   const leftInner = useMemo(() => range(31, 39).reverse(), []); // 39 → 31 (згори вниз)
   const leftOuterTop = useMemo(() => [45, 44], []);
   const leftOuterBottom = useMemo(() => [43, 42, 41, 40], []);
@@ -116,42 +120,75 @@ export function PoolMap({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
-      dragMoved.current = false;
-      panStart.current = {
-        clientX: e.clientX,
-        clientY: e.clientY,
-        panX,
-        panY,
-      };
-      setDragging(true);
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (pointersRef.current.size >= 2) {
+        // Другий палець — починаємо pinch-zoom, панораму призупиняємо.
+        const [a, b] = [...pointersRef.current.values()];
+        pinchRef.current = {
+          startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+          startScale: scale,
+        };
+        panStart.current = null;
+        dragMoved.current = true; // після pinch не віддаємо «клік» місцю
+      } else {
+        dragMoved.current = false;
+        panStart.current = { clientX: e.clientX, clientY: e.clientY, panX, panY };
+        setDragging(true);
+      }
       e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [panX, panY],
+    [panX, panY, scale],
   );
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Двопальцевий pinch — масштаб від відношення відстаней між пальцями.
+    if (pointersRef.current.size >= 2 && pinchRef.current) {
+      const [a, b] = [...pointersRef.current.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const next = clamp(
+        pinchRef.current.startScale * (dist / pinchRef.current.startDist),
+        SCALE_MIN,
+        SCALE_MAX,
+      );
+      setScale(Number(next.toFixed(3)));
+      return;
+    }
+
     const start = panStart.current;
     if (!start) return;
-
     const dx = e.clientX - start.clientX;
     const dy = e.clientY - start.clientY;
-
     if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) dragMoved.current = true;
-
     setPanX(start.panX + dx);
     setPanY(start.panY + dy);
   }, []);
 
-  const endPan = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    panStart.current = null;
-    setDragging(false);
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  const endPan = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      pointersRef.current.delete(e.pointerId);
+      if (pointersRef.current.size < 2) pinchRef.current = null;
+
+      if (pointersRef.current.size === 0) {
+        panStart.current = null;
+        setDragging(false);
+      } else {
+        // Лишився один палець — продовжуємо панораму від його позиції.
+        const [p] = [...pointersRef.current.values()];
+        panStart.current = { clientX: p.x, clientY: p.y, panX, panY };
+      }
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    },
+    [panX, panY],
+  );
 
   /** Після перетягування не віддаємо «клік» місцю під курсором */
   const onViewportClickCapture = useCallback(
@@ -289,19 +326,22 @@ export function PoolMap({
                 {/* Верхній ряд: 60 → 46 */}
                 <div className={stripRow}>{topRow.map(seatEl)}</div>
 
-                {/* Середня смуга: колонки ліворуч · басейн · колонки праворуч */}
+                {/* Середня смуга (дзеркально): 1–16 ліворуч · басейн · 31–45 праворуч */}
                 <div className="flex w-full items-stretch justify-center gap-2.5">
-                  {/* Ліва зовнішня колонка (45,44 / 43–40) */}
+                  {/* Зовнішня колонка 1–4 / 5–8 (ліворуч) */}
                   <div className={stripCol}>
-                    <div className={seatGroupCol}>{leftOuterTop.map(seatEl)}</div>
+                    <div className={seatGroupCol}>{rightOuterTop.map(seatEl)}</div>
                     <div className={seatGroupCol}>
-                      {leftOuterBottom.map(seatEl)}
+                      {rightOuterBottom.map(seatEl)}
                     </div>
                   </div>
 
-                  {/* Ліва внутрішня колонка (39 → 31) */}
-                  <div className={`${stripCol} justify-center`}>
-                    <div className={seatGroupCol}>{leftInner.map(seatEl)}</div>
+                  {/* Внутрішня колонка 9–12 / 13–16 (ліворуч) */}
+                  <div className={stripCol}>
+                    <div className={seatGroupCol}>{rightInnerTop.map(seatEl)}</div>
+                    <div className={seatGroupCol}>
+                      {rightInnerBottom.map(seatEl)}
+                    </div>
                   </div>
 
                   {/* Басейн */}
@@ -321,19 +361,16 @@ export function PoolMap({
                     </span>
                   </div>
 
-                  {/* Права внутрішня колонка (9–12 / 13–16) */}
-                  <div className={stripCol}>
-                    <div className={seatGroupCol}>{rightInnerTop.map(seatEl)}</div>
-                    <div className={seatGroupCol}>
-                      {rightInnerBottom.map(seatEl)}
-                    </div>
+                  {/* Внутрішня колонка 39 → 31 (праворуч) */}
+                  <div className={`${stripCol} justify-center`}>
+                    <div className={seatGroupCol}>{leftInner.map(seatEl)}</div>
                   </div>
 
-                  {/* Права зовнішня колонка (1–4 / 5–8) */}
-                  <div className={stripCol}>
-                    <div className={seatGroupCol}>{rightOuterTop.map(seatEl)}</div>
+                  {/* Зовнішня колонка 45→40 (праворуч, менший блок; підняті догори, вільне місце лишається знизу) */}
+                  <div className={`${stripCol} justify-start`}>
                     <div className={seatGroupCol}>
-                      {rightOuterBottom.map(seatEl)}
+                      {leftOuterTop.map(seatEl)}
+                      {leftOuterBottom.map(seatEl)}
                     </div>
                   </div>
                 </div>

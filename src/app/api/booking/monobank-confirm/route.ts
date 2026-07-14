@@ -1,7 +1,8 @@
 import "reflect-metadata";
 import { NextResponse } from "next/server";
-import { parseVisitDateKey } from "@/lib/dates/visit-date-key";
+import { formatVisitDateKey, parseVisitDateKey } from "@/lib/dates/visit-date-key";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
+import { claimSeatsForPaidBooking } from "@/lib/booking/seat-bookings";
 import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { isAllowedPoolSeatId, MAX_SEATS_PER_BOOKING } from "@/lib/booking/seat-id";
 import { getMonobankInvoiceStatus, isMonobankConfigured } from "@/lib/payments/monobank";
@@ -106,18 +107,33 @@ export async function POST(req: Request) {
       }
       if (!existing.phone) existing.phone = body.phone;
       if (!existing.details && body.details) existing.details = body.details;
+
+      // Закріплюємо місця за оплаченою бронню (атомарно через UNIQUE-індекс).
+      const rowKey = formatVisitDateKey(existing.visitDate);
+      const rowSeatIds = Object.keys(existing.seatsJson ?? {});
+      const seatsToClaim = rowSeatIds.length ? rowSeatIds : seatIds;
+      const { conflicted } = await claimSeatsForPaidBooking(
+        ds,
+        existing.id,
+        rowKey,
+        seatsToClaim,
+      );
+
       existing.paymentPayloadJson = {
         ...(existing.paymentPayloadJson ?? {}),
         source: "pay_return_client_verified",
         monobankStatus: invoice.raw,
+        ...(conflicted.length ? { seatConflicts: conflicted } : {}),
       };
       await repo.save(existing);
 
-      const rowSeatIds = Object.keys(existing.seatsJson ?? {});
-      await releaseHoldsForSeats(body.visitDateKey, rowSeatIds.length ? rowSeatIds : seatIds).catch(
-        () => {},
-      );
-      return NextResponse.json({ ok: true, id: existing.id, updated: true });
+      await releaseHoldsForSeats(rowKey, seatsToClaim).catch(() => {});
+      return NextResponse.json({
+        ok: true,
+        id: existing.id,
+        updated: true,
+        seatConflicts: conflicted,
+      });
     }
 
     // Рахунок оплачено, але заявка не збереглась при створенні інвойсу
@@ -142,8 +158,23 @@ export async function POST(req: Request) {
       },
     });
     await repo.save(row);
+
+    const { conflicted } = await claimSeatsForPaidBooking(
+      ds,
+      row.id,
+      body.visitDateKey,
+      seatIds,
+    );
+    if (conflicted.length) {
+      row.paymentPayloadJson = {
+        ...(row.paymentPayloadJson ?? {}),
+        seatConflicts: conflicted,
+      };
+      await repo.save(row);
+    }
+
     await releaseHoldsForSeats(body.visitDateKey, seatIds).catch(() => {});
-    return NextResponse.json({ ok: true, id: row.id });
+    return NextResponse.json({ ok: true, id: row.id, seatConflicts: conflicted });
   } catch (e) {
     const message = e instanceof Error ? e.message : "db_error";
     return NextResponse.json(

@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
   try {
     const [booked, held] = await Promise.all([
-      loadOccupiedSeatIdsForVisitDay(day),
+      loadOccupiedSeatIdsForVisitDay(dateKey),
       loadHeldSeatIds(dateKey, clientId),
     ]);
     const heldOnly = [...held].filter((id) => !booked.has(id));

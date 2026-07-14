@@ -1,9 +1,13 @@
 import "reflect-metadata";
 import { NextResponse } from "next/server";
 import { loadOccupiedSeatIdsForVisitDay } from "@/lib/booking/load-occupied-seat-ids";
+import {
+  createConfirmedBookingWithSeats,
+  SeatConflictError,
+} from "@/lib/booking/seat-bookings";
 import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
-import { getBookingRequestRepository, getDataSource } from "@/lib/db";
+import { getDataSource } from "@/lib/db";
 import { sumSeatPrices } from "@/lib/pool/seat-pricing";
 
 export const runtime = "nodejs";
@@ -42,11 +46,13 @@ export async function POST(req: Request) {
 
   const { visitDate, visitDateKey, seatIds, fullName, phone, details } =
     parsed.data;
-  const seatsJson = Object.fromEntries(seatIds.map((id) => [id, true]));
   const amountKopiyky = Math.max(0, Math.round(sumSeatPrices(seatIds) * 100));
 
   try {
-    const taken = await loadOccupiedSeatIdsForVisitDay(visitDate);
+    const ds = await getDataSource();
+
+    // Дружня рання перевірка (гарний список зайнятих місць).
+    const taken = await loadOccupiedSeatIdsForVisitDay(visitDateKey);
     const clash = seatIds.filter((id) => taken.has(id));
     if (clash.length > 0) {
       return NextResponse.json(
@@ -59,25 +65,32 @@ export async function POST(req: Request) {
       );
     }
 
-    const ds = await getDataSource();
-    const repo = getBookingRequestRepository(ds);
-    const row = repo.create({
+    // Атомарний запис: заявка + місця в seat_bookings в одній транзакції.
+    // Унікальний індекс ловить гонку між перевіркою вище і вставкою.
+    const { id } = await createConfirmedBookingWithSeats(ds, {
       visitDate,
+      visitDateKey,
       fullName,
       phone,
       paymentMethod,
-      paymentStatus: "requested",
       amountKopiyky,
-      paidAt: null,
       details: details || null,
-      seatsJson,
-      monobankInvoiceId: null,
-      paymentPayloadJson: null,
+      seatIds,
     });
-    await repo.save(row);
+
     await releaseHoldsForSeats(visitDateKey, seatIds).catch(() => {});
-    return NextResponse.json({ id: row.id });
+    return NextResponse.json({ id });
   } catch (e) {
+    if (e instanceof SeatConflictError) {
+      return NextResponse.json(
+        {
+          error:
+            "Частина місць щойно зайнята іншою заявкою. Оновіть сторінку й оберіть інші.",
+          clashSeatIds: e.seatIds,
+        },
+        { status: 409 },
+      );
+    }
     console.error("[booking-request]", e);
     return NextResponse.json(
       {

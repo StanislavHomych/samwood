@@ -1,0 +1,123 @@
+import "reflect-metadata";
+import type { DataSource } from "typeorm";
+import { BookingRequest as BookingRequestEntity } from "@/entities/booking-request.entity";
+
+/**
+ * Джерело правди про зайнятість місць — таблиця `seat_bookings`
+ * з `UNIQUE(visitDate, seatId)`. Рядок туди пишеться атомарно в момент,
+ * коли бронь стає підтвердженою (готівка/на місці — одразу при заявці,
+ * monobank — після успішної оплати). Унікальний індекс робить подвійне
+ * бронювання одного місця на день фізично неможливим (гонки не проходять).
+ */
+
+/** Помилка: частина місць уже зайнята іншою підтвердженою бронню. */
+export class SeatConflictError extends Error {
+  constructor(public readonly seatIds: string[]) {
+    super("SEAT_CONFLICT");
+    this.name = "SeatConflictError";
+  }
+}
+
+/** Ознака unique-violation Postgres (23505). */
+function isUniqueViolation(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: string }).code === "23505";
+}
+
+/** Зайняті (підтверджені) місця на день візиту `YYYY-MM-DD`. */
+export async function loadBookedSeatIds(
+  ds: DataSource,
+  visitDateKey: string,
+): Promise<Set<string>> {
+  const rows: Array<{ seatId: string }> = await ds.query(
+    `SELECT "seatId" FROM "seat_bookings" WHERE "visitDate" = $1`,
+    [visitDateKey],
+  );
+  return new Set(rows.map((r) => r.seatId));
+}
+
+type CashBookingInput = {
+  visitDate: Date;
+  visitDateKey: string;
+  fullName: string;
+  phone: string;
+  paymentMethod: "cash" | "on_site";
+  amountKopiyky: number;
+  details: string | null;
+  seatIds: string[];
+};
+
+/**
+ * Атомарно створює заявку (готівка/на місці) + займає місця в `seat_bookings`
+ * в одній транзакції. Якщо хоч одне місце вже зайняте — кидає SeatConflictError,
+ * і НІЧОГО не записується (rollback).
+ */
+export async function createConfirmedBookingWithSeats(
+  ds: DataSource,
+  input: CashBookingInput,
+): Promise<{ id: string }> {
+  const seatsJson = Object.fromEntries(input.seatIds.map((id) => [id, true]));
+  const qr = ds.createQueryRunner();
+  await qr.connect();
+  await qr.startTransaction();
+  try {
+    const repo = qr.manager.getRepository(BookingRequestEntity);
+    const row = repo.create({
+      visitDate: input.visitDate,
+      fullName: input.fullName,
+      phone: input.phone,
+      paymentMethod: input.paymentMethod,
+      paymentStatus: "requested",
+      amountKopiyky: input.amountKopiyky,
+      paidAt: null,
+      details: input.details,
+      seatsJson,
+      monobankInvoiceId: null,
+      paymentPayloadJson: null,
+    });
+    await repo.save(row);
+
+    for (const seatId of input.seatIds) {
+      await qr.query(
+        `INSERT INTO "seat_bookings" ("bookingRequestId", "visitDate", "seatId")
+         VALUES ($1, $2, $3)`,
+        [row.id, input.visitDateKey, seatId],
+      );
+    }
+
+    await qr.commitTransaction();
+    return { id: row.id };
+  } catch (e) {
+    await qr.rollbackTransaction();
+    if (isUniqueViolation(e)) throw new SeatConflictError(input.seatIds);
+    throw e;
+  } finally {
+    await qr.release();
+  }
+}
+
+/**
+ * Займає місця за вже існуючою (оплаченою) бронню monobank — best-effort:
+ * місця, які встиг зайняти хтось раніше, пропускаються (ON CONFLICT DO NOTHING).
+ * Клієнт уже заплатив, тож саму бронь не відхиляємо; повертаємо, які місця
+ * реально закріплені, а які — конфліктні (для адмінки / ручного розбору).
+ */
+export async function claimSeatsForPaidBooking(
+  ds: DataSource,
+  bookingRequestId: string,
+  visitDateKey: string,
+  seatIds: string[],
+): Promise<{ claimed: string[]; conflicted: string[] }> {
+  const claimed: string[] = [];
+  for (const seatId of seatIds) {
+    const res: Array<{ seatId: string }> = await ds.query(
+      `INSERT INTO "seat_bookings" ("bookingRequestId", "visitDate", "seatId")
+       VALUES ($1, $2, $3)
+       ON CONFLICT ("visitDate", "seatId") DO NOTHING
+       RETURNING "seatId"`,
+      [bookingRequestId, visitDateKey, seatId],
+    );
+    if (res.length > 0) claimed.push(seatId);
+  }
+  const conflicted = seatIds.filter((s) => !claimed.includes(s));
+  return { claimed, conflicted };
+}

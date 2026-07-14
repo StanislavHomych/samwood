@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const ids = await loadOccupiedSeatIdsForVisitDay(day);
+    const ids = await loadOccupiedSeatIdsForVisitDay(date);
     return NextResponse.json({
       date,
       seatIds: [...ids].sort((a, b) => a.localeCompare(b, "uk")),

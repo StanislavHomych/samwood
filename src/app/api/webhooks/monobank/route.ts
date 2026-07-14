@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { NextResponse } from "next/server";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
+import { claimSeatsForPaidBooking } from "@/lib/booking/seat-bookings";
+import { formatVisitDateKey } from "@/lib/dates/visit-date-key";
 import {
   isMonobankConfigured,
   verifyMonobankWebhookSignature,
@@ -69,17 +71,26 @@ export async function POST(req: Request) {
     if (row.paymentStatus !== "paid" || next === "paid" || next === "reversed") {
       row.paymentStatus = next;
     }
+    let conflicted: string[] = [];
     if (status === "success") {
       row.paidAt =
         typeof payload.modifiedDate === "string" && !Number.isNaN(new Date(payload.modifiedDate).getTime())
           ? new Date(payload.modifiedDate)
           : new Date();
       if (typeof payload.amount === "number") row.amountKopiyky = payload.amount;
+
+      // Закріплюємо місця за оплаченою бронню (атомарно через UNIQUE-індекс).
+      const rowKey = formatVisitDateKey(row.visitDate);
+      const rowSeatIds = Object.keys(row.seatsJson ?? {});
+      if (rowSeatIds.length) {
+        ({ conflicted } = await claimSeatsForPaidBooking(ds, row.id, rowKey, rowSeatIds));
+      }
     }
     row.paymentPayloadJson = {
       ...(row.paymentPayloadJson ?? {}),
       source: "monobank_webhook",
       webhook: payload,
+      ...(conflicted.length ? { seatConflicts: conflicted } : {}),
     };
     await repo.save(row);
 
