@@ -4,8 +4,8 @@ import { parseVisitDateKey } from "@/lib/dates/visit-date-key";
  * Тарифи на лежак (грн). Ціна залежить від дня тижня візиту:
  * Пн–Чт — будній тариф, Пт–Нд — тариф вихідного.
  */
-export const LOUNGER_PRICE_WEEKDAY_UAH = 700; // Пн–Чт
-export const LOUNGER_PRICE_WEEKEND_UAH = 800; // Пт–Нд
+export const LOUNGER_PRICE_WEEKDAY_UAH = 1; // Пн–Чт (тестова ціна для прод-тесту)
+export const LOUNGER_PRICE_WEEKEND_UAH = 1; // Пт–Нд (тестова ціна для прод-тесту)
 
 /** Пт/Сб/Нд за календарним днем візиту (UTC — як зберігаються дати візиту). */
 export function isWeekendVisitKey(visitDateKey: string): boolean {
