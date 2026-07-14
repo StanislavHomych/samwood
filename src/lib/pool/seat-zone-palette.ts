@@ -1,3 +1,5 @@
+import { ZONE_PRICES_UAH } from "@/lib/pool/seat-pricing";
+
 /**
  * Палітра зон на карті + зразки в легенді тарифів.
  * Сектор 3 — коричневий; ряд (L) — жовтий: візуально далеко одне від одного.
@@ -47,29 +49,9 @@ export type SeatVariantKey = keyof typeof seatZonePalette;
 
 export const seatPricingLegendRows = [
   {
-    title: "Сектор 2",
-    price: 580,
-    swatch: seatZonePalette.pink.swatch,
-  },
-  {
-    title: "Сектор 3",
-    price: 520,
-    swatch: seatZonePalette.orange.swatch,
-  },
-  {
-    title: "Ряд",
-    price: 420,
+    title: "Лежак",
+    price: ZONE_PRICES_UAH.L,
     swatch: seatZonePalette.yellow.swatch,
-  },
-  {
-    title: "Зелена зона",
-    price: 750,
-    swatch: seatZonePalette.green.swatch,
-  },
-  {
-    title: "Синя / джакузі",
-    price: 1100,
-    swatch: seatZonePalette.blue.swatch,
   },
 ] as const;
 

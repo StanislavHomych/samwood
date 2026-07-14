@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import {
   ADMIN_SESSION_COOKIE,
+  ADMIN_SESSION_MAX_AGE_SEC,
   adminPasswordConfigured,
   expectedAdminSessionToken,
+  verifyAdminPassword,
 } from "@/lib/admin/admin-session";
 
 export const runtime = "nodejs";
@@ -23,7 +25,7 @@ export async function POST(req: Request) {
   }
 
   const password = typeof body.password === "string" ? body.password : "";
-  if (password !== process.env.ADMIN_PASSWORD?.trim()) {
+  if (!verifyAdminPassword(password)) {
     return NextResponse.json({ error: "Невірний пароль" }, { status: 401 });
   }
 
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge: ADMIN_SESSION_MAX_AGE_SEC,
   });
   return res;
 }

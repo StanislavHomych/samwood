@@ -6,7 +6,13 @@ import {
   isAdminSessionValid,
 } from "@/lib/admin/admin-session";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
-import { formatVisitDateKey, parseVisitDateKey } from "@/lib/dates/visit-date-key";
+import {
+  formatInstant,
+  formatVisitDayHuman,
+  nextVisitDay,
+  parseVisitDateKey,
+  todayVisitDateKey,
+} from "@/lib/dates/visit-date-key";
 import { BookingsFilterBar } from "./bookings-filter-bar";
 import { DeleteBookingButton } from "./delete-booking-button";
 
@@ -39,6 +45,24 @@ function labelPaymentStatus(s: string | null) {
   return map[s] ?? s;
 }
 
+/** Колір бейджа статусу оплати. */
+function paymentStatusBadge(s: string | null): string {
+  if (s === "paid")
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (s === "requested")
+    return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-zinc-200 bg-zinc-50 text-zinc-600";
+}
+
+function formatUah(kopiyky: number): string {
+  return (kopiyky / 100).toLocaleString("uk-UA", {
+    style: "currency",
+    currency: "UAH",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 function bookingsListHref(parts: { date?: string; payment?: string }) {
   const p = new URLSearchParams();
   if (parts.date) p.set("date", parts.date);
@@ -50,6 +74,11 @@ function bookingsListHref(parts: { date?: string; payment?: string }) {
 function telHref(phone: string): string {
   const cleaned = phone.replace(/[\s().-]/g, "");
   return cleaned ? `tel:${cleaned}` : "#";
+}
+
+function seatCount(json: Record<string, boolean> | null): number {
+  if (!json || typeof json !== "object") return 0;
+  return Object.values(json).filter(Boolean).length;
 }
 
 function seatsPreview(
@@ -65,6 +94,30 @@ function seatsPreview(
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900">
+        {value}
+      </p>
+      {hint ? (
+        <p className="mt-0.5 text-xs font-medium text-zinc-500">{hint}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export default async function AdminBookingsPage({ searchParams }: PageProps) {
   const cookieStore = await cookies();
   if (!isAdminSessionValid(cookieStore.get(ADMIN_SESSION_COOKIE)?.value)) {
@@ -77,9 +130,7 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
 
   const paymentRaw =
     typeof sp.payment === "string" ? sp.payment.trim().toLowerCase() : "";
-  const paymentFilter = isPaymentFilterValue(paymentRaw)
-    ? paymentRaw
-    : null;
+  const paymentFilter = isPaymentFilterValue(paymentRaw) ? paymentRaw : null;
 
   const ds = await getDataSource();
   const repo = getBookingRequestRepository(ds);
@@ -90,8 +141,7 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
     .addOrderBy("b.createdAt", "DESC");
 
   if (day) {
-    const end = new Date(day);
-    end.setDate(end.getDate() + 1);
+    const end = nextVisitDay(day);
     qb.andWhere("b.visitDate >= :dayStart", { dayStart: day }).andWhere(
       "b.visitDate < :dayEnd",
       { dayEnd: end },
@@ -106,16 +156,16 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
 
   const rows = await qb.getMany();
 
-  const fmtDate = (d: Date) =>
-    new Intl.DateTimeFormat("uk-UA", { dateStyle: "medium" }).format(d);
+  // Зведення по відфільтрованому набору.
+  const totalSeats = rows.reduce((s, r) => s + seatCount(r.seatsJson), 0);
+  const paidRows = rows.filter((r) => r.paymentStatus === "paid");
+  const pendingCount = rows.length - paidRows.length;
+  const paidRevenueKop = paidRows.reduce(
+    (s, r) => s + (typeof r.amountKopiyky === "number" ? r.amountKopiyky : 0),
+    0,
+  );
 
-  const fmtDateTime = (d: Date) =>
-    new Intl.DateTimeFormat("uk-UA", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(d);
-
-  const today = formatVisitDateKey(new Date());
+  const today = todayVisitDateKey();
 
   return (
     <div className="space-y-8 font-[family-name:var(--font-montserrat)]">
@@ -128,6 +178,36 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
             Таблиця з бази. Можна фільтрувати за датою візиту та способом оплати.
           </p>
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <span className="text-zinc-500">Швидко:</span>
+          <a
+            href={bookingsListHref({
+              date: today,
+              payment: paymentFilter ?? undefined,
+            })}
+            className={[
+              "rounded-full border px-3 py-1 transition",
+              dateKey === today
+                ? "border-teal-700 bg-teal-700 text-white"
+                : "border-zinc-300 bg-white text-zinc-700 hover:border-teal-600 hover:text-teal-800",
+            ].join(" ")}
+          >
+            Сьогодні
+          </a>
+          <a
+            href={bookingsListHref({ payment: paymentFilter ?? undefined })}
+            className={[
+              "rounded-full border px-3 py-1 transition",
+              !dateKey
+                ? "border-teal-700 bg-teal-700 text-white"
+                : "border-zinc-300 bg-white text-zinc-700 hover:border-teal-600 hover:text-teal-800",
+            ].join(" ")}
+          >
+            Усі дні
+          </a>
+        </div>
+
         <BookingsFilterBar
           key={`${dateKey}|${paymentFilter ?? ""}`}
           defaultDate={day ? dateKey : ""}
@@ -140,6 +220,29 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
           })}
           showClearDate={Boolean(day)}
           showClearPayment={Boolean(paymentFilter)}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard
+          label="Заявок"
+          value={rows.length.toLocaleString("uk-UA")}
+          hint={day ? `за ${dateKey}` : "усі дні"}
+        />
+        <StatCard
+          label="Місць"
+          value={totalSeats.toLocaleString("uk-UA")}
+          hint="сумарно по заявках"
+        />
+        <StatCard
+          label="Оплачено"
+          value={paidRows.length.toLocaleString("uk-UA")}
+          hint={`очікує: ${pendingCount.toLocaleString("uk-UA")}`}
+        />
+        <StatCard
+          label="Виручка (оплачено)"
+          value={formatUah(paidRevenueKop)}
+          hint="лише оплачені заявки"
         />
       </div>
 
@@ -173,19 +276,17 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
               </tr>
             ) : (
               rows.map((r) => {
-                const seatKeys = r.seatsJson
-                  ? Object.keys(r.seatsJson).filter((k) => r.seatsJson![k])
-                  : [];
+                const seats = seatCount(r.seatsJson);
                 return (
                   <tr
                     key={r.id}
                     className="border-b border-zinc-100 odd:bg-white even:bg-zinc-50/70 transition hover:bg-teal-50/50"
                   >
                     <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-800">
-                      {fmtDateTime(r.createdAt)}
+                      {formatInstant(r.createdAt)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-900">
-                      {fmtDate(r.visitDate)}
+                      {formatVisitDayHuman(r.visitDate)}
                     </td>
                     <td className="px-4 py-3 font-semibold text-zinc-900">
                       {r.fullName}
@@ -205,8 +306,15 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
                     <td className="whitespace-nowrap px-4 py-3 text-zinc-700">
                       {labelPayment(r.paymentMethod)}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-zinc-700">
-                      {labelPaymentStatus(r.paymentStatus)}
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span
+                        className={[
+                          "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                          paymentStatusBadge(r.paymentStatus),
+                        ].join(" ")}
+                      >
+                        {labelPaymentStatus(r.paymentStatus)}
+                      </span>
                     </td>
                     <td
                       className="max-w-[180px] truncate px-4 py-3 font-mono text-[11px] text-zinc-700"
@@ -216,16 +324,11 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">
                       {typeof r.amountKopiyky === "number"
-                        ? (r.amountKopiyky / 100).toLocaleString("uk-UA", {
-                            style: "currency",
-                            currency: "UAH",
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })
+                        ? formatUah(r.amountKopiyky)
                         : "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">
-                      {seatKeys.length}
+                      {seats}
                     </td>
                     <td
                       className="max-w-[300px] px-4 py-3 font-mono text-[11px] leading-snug text-zinc-700"

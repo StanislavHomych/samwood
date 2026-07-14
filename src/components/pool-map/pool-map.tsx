@@ -12,7 +12,7 @@ import { Seat } from "./seat";
 import { SeatPricingLegend } from "./seat-pricing-legend";
 
 const MAP_W = 704;
-const PLAN_H = 892;
+const PLAN_H = 560;
 
 const SCALE_MIN = 0.5;
 const SCALE_MAX = 2;
@@ -25,48 +25,8 @@ function range(a: number, b: number): number[] {
   return out;
 }
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const res: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) res.push(arr.slice(i, i + size));
-  return res;
-}
-
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
-}
-
-function VipCluster({ index }: { index: number }) {
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <div className="grid grid-cols-3 place-items-center gap-0.5">
-        <div className="h-1.5 w-1.5 rotate-45 bg-[#6a6358]" />
-        <div className="h-1.5 w-1.5 rotate-45 bg-[#6a6358]" />
-        <div className="h-1.5 w-1.5 rotate-45 bg-[#6a6358]" />
-        <div className="h-1.5 w-1.5 rotate-45 bg-[#6a6358]" />
-        <div className="flex h-4 w-4 items-center justify-center rounded-sm border border-[#c9a962]/25 bg-[#2a2622] text-[7px] font-bold text-[#c9a962]">
-          {index + 1}
-        </div>
-        <div className="h-1.5 w-1.5 rotate-45 bg-[#6a6358]" />
-        <div className="h-1.5 w-1.5 rotate-45 bg-[#6a6358]" />
-        <div className="h-1.5 w-1.5 rotate-45 bg-[#6a6358]" />
-        <div className="h-1.5 w-1.5 rotate-45 bg-[#6a6358]" />
-      </div>
-    </div>
-  );
-}
-
-function LadderIcon() {
-  return (
-    <div
-      className="flex h-10 w-[18px] flex-col justify-between rounded border border-[#4a4540] bg-[#2a2724] px-0.5 py-0.5"
-      aria-hidden
-    >
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="h-[2px] w-full rounded-sm bg-[#c9a962]/25" />
-      ))}
-      <div className="mx-auto h-[3px] w-[3px] rounded-full bg-[#c9a962]/40" />
-    </div>
-  );
 }
 
 type PoolMapProps = {
@@ -120,12 +80,39 @@ export function PoolMap({
     setScale((s) => clamp(Number((s - SCALE_STEP).toFixed(2)), SCALE_MIN, SCALE_MAX));
   }, []);
 
-  const s2Blocks = useMemo(() => chunk(range(29, 112), 28), []);
-  const s3Blocks = useMemo(() => chunk(range(119, 178), 20), []);
+  // 60 лежаків навколо басейну (за годинниковою стрілкою від правого краю).
+  // Праворуч — дві колонки (1–8 зовні, 9–16 всередині), низ 17–30,
+  // ліворуч — дві колонки (31–39 всередині, 40–45 зовні), верх 46–60.
+  const topRow = useMemo(() => range(46, 60).reverse(), []); // 60 → 46 (зліва направо)
+  const bottomRow = useMemo(() => range(17, 30).reverse(), []); // 30 → 17 (зліва направо)
+  const leftInner = useMemo(() => range(31, 39).reverse(), []); // 39 → 31 (згори вниз)
+  const leftOuterTop = useMemo(() => [45, 44], []);
+  const leftOuterBottom = useMemo(() => [43, 42, 41, 40], []);
+  const rightInnerTop = useMemo(() => [9, 10, 11, 12], []);
+  const rightInnerBottom = useMemo(() => [13, 14, 15, 16], []);
+  const rightOuterTop = useMemo(() => [1, 2, 3, 4], []);
+  const rightOuterBottom = useMemo(() => [5, 6, 7, 8], []);
 
-  const leftNums = range(217, 234);
-  const bottomGreen = range(349, 354);
-  const bottomBlue = range(16, 20);
+  const seatEl = useCallback(
+    (n: number) => {
+      const sid = `L-${n}`;
+      return (
+        <Seat
+          key={n}
+          id={sid}
+          label={n}
+          variant="yellow"
+          size="normal"
+          selected={!!selectedSeats[sid]}
+          booked={!!bookedSeatIds[sid]}
+          heldByOther={!!remoteDraftSeatIds[sid] && !selectedSeats[sid]}
+          priceUah={priceForSeatId(sid)}
+          onToggle={onSeatToggle}
+        />
+      );
+    },
+    [selectedSeats, bookedSeatIds, remoteDraftSeatIds, onSeatToggle],
+  );
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -192,6 +179,10 @@ export function PoolMap({
     el.addEventListener("wheel", wheelHandler, { passive: false });
     return () => el.removeEventListener("wheel", wheelHandler);
   }, []);
+
+  const stripCol = "flex flex-col justify-between rounded-lg bg-zinc-100/90 px-1.5 py-2 ring-1 ring-zinc-200/70";
+  const stripRow = "flex items-center gap-1.5 rounded-lg bg-zinc-100/90 px-2 py-1.5 ring-1 ring-zinc-200/70";
+  const seatGroupCol = "flex flex-col items-center gap-1.5";
 
   return (
     <div
@@ -290,70 +281,31 @@ export function PoolMap({
                 minHeight: PLAN_H,
               }}
             >
-              <div className="relative z-10 flex min-h-[892px] w-full bg-white">
-                <div className="flex w-[32px] shrink-0 flex-col items-center justify-between border-r border-zinc-200/80 py-10 pr-0.5">
-                  {leftNums.map((n) => {
-                    const sid = `L-${n}`;
-                    return (
-                      <Seat
-                        key={n}
-                        id={sid}
-                        label={n}
-                        variant="yellow"
-                        size="compact"
-                        unavailable={false}
-                        selected={!!selectedSeats[sid]}
-                        booked={!!bookedSeatIds[sid]}
-                        heldByOther={
-                          !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
-                        }
-                        priceUah={priceForSeatId(sid)}
-                        onToggle={onSeatToggle}
-                      />
-                    );
-                  })}
-                </div>
+              {/* План: 60 лежаків навколо басейну */}
+              <div
+                className="relative z-10 flex w-full flex-col items-center justify-center gap-3 bg-white px-5 py-6"
+                style={{ minHeight: PLAN_H }}
+              >
+                {/* Верхній ряд: 60 → 46 */}
+                <div className={stripRow}>{topRow.map(seatEl)}</div>
 
-                <div className="flex min-w-0 flex-1 flex-col px-1.5">
-                  <div className="flex justify-center gap-5 pb-1 pt-2">
-                    {[0, 1, 2, 3].map((i) => (
-                      <VipCluster key={i} index={i} />
-                    ))}
+                {/* Середня смуга: колонки ліворуч · басейн · колонки праворуч */}
+                <div className="flex w-full items-stretch justify-center gap-2.5">
+                  {/* Ліва зовнішня колонка (45,44 / 43–40) */}
+                  <div className={stripCol}>
+                    <div className={seatGroupCol}>{leftOuterTop.map(seatEl)}</div>
+                    <div className={seatGroupCol}>
+                      {leftOuterBottom.map(seatEl)}
+                    </div>
                   </div>
 
-                  <div className="pb-0.5 text-center font-[family-name:var(--font-cormorant)] text-[10px] font-normal tracking-[0.35em] text-[#7a4858]">
-                    СЕКТОР 2
-                  </div>
-                  <div className="mx-auto flex gap-1.5 pb-1.5">
-                    {s2Blocks.map((block, bi) => (
-                      <div
-                        key={bi}
-                        className="grid grid-cols-7 gap-x-[2px] gap-y-[2px]"
-                      >
-                        {block.map((n) => {
-                          const sid = `S2-${n}`;
-                          return (
-                            <Seat
-                              key={n}
-                              id={sid}
-                              label={n}
-                              variant="pink"
-                              size="slim"
-                              selected={!!selectedSeats[sid]}
-                              booked={!!bookedSeatIds[sid]}
-                              heldByOther={
-                                !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
-                              }
-                              priceUah={priceForSeatId(sid)}
-                              onToggle={onSeatToggle}
-                            />
-                          );
-                        })}
-                      </div>
-                    ))}
+                  {/* Ліва внутрішня колонка (39 → 31) */}
+                  <div className={`${stripCol} justify-center`}>
+                    <div className={seatGroupCol}>{leftInner.map(seatEl)}</div>
                   </div>
 
-                  <div className="relative mx-0.5 my-1 flex h-[108px] items-center justify-center overflow-hidden rounded border-[2px] border-[#1a2a32] shadow-[0_0_0_1px_rgba(201,169,98,0.22),0_12px_40px_-12px_rgba(0,0,0,0.6)]">
+                  {/* Басейн */}
+                  <div className="relative flex min-h-[260px] min-w-[260px] flex-1 items-center justify-center overflow-hidden rounded-lg border-[2px] border-[#1a2a32] shadow-[0_0_0_1px_rgba(201,169,98,0.22),0_12px_40px_-12px_rgba(0,0,0,0.6)]">
                     <div
                       className="absolute inset-0 bg-[#1e3a4a]"
                       style={{
@@ -364,129 +316,30 @@ export function PoolMap({
                         `,
                       }}
                     />
-                    <span className="relative z-[1] text-center font-[family-name:var(--font-cormorant)] text-[13px] font-normal uppercase leading-tight tracking-[0.18em] text-[#f0ebe3] drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]">
-                      ДОРОСЛИЙ
-                      <br />
+                    <span className="relative z-[1] text-center font-[family-name:var(--font-cormorant)] text-[18px] font-normal uppercase tracking-[0.2em] text-[#f0ebe3] drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]">
                       БАСЕЙН
                     </span>
                   </div>
 
-                  <div className="pb-0.5 pt-2 text-center font-[family-name:var(--font-cormorant)] text-[10px] font-normal tracking-[0.35em] text-[#7a5838]">
-                    СЕКТОР 3
-                  </div>
-                  <div className="mx-auto flex gap-1.5 pb-1.5">
-                    {s3Blocks.map((block, bi) => (
-                      <div
-                        key={bi}
-                        className="grid grid-cols-5 gap-x-[2px] gap-y-[2px]"
-                      >
-                        {block.map((n) => {
-                          const sid = `S3-${n}`;
-                          return (
-                            <Seat
-                              key={n}
-                              id={sid}
-                              label={n}
-                              variant="orange"
-                              size="slim"
-                              selected={!!selectedSeats[sid]}
-                              booked={!!bookedSeatIds[sid]}
-                              heldByOther={
-                                !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
-                              }
-                              priceUah={priceForSeatId(sid)}
-                              onToggle={onSeatToggle}
-                            />
-                          );
-                        })}
-                      </div>
-                    ))}
+                  {/* Права внутрішня колонка (9–12 / 13–16) */}
+                  <div className={stripCol}>
+                    <div className={seatGroupCol}>{rightInnerTop.map(seatEl)}</div>
+                    <div className={seatGroupCol}>
+                      {rightInnerBottom.map(seatEl)}
+                    </div>
                   </div>
 
-                  <div
-                    className="mx-0.5 mb-1.5 h-2 rounded-sm border border-[#3d4a38]/50"
-                    style={{
-                      background:
-                        "repeating-linear-gradient(90deg, #4a5c44 0 4px, #3d4f3a 4px 8px)",
-                    }}
-                  />
-                  <div className="flex items-end justify-between gap-2 px-0.5 pb-3">
-                    <div className="flex gap-1.5">
-                      {bottomGreen.map((n) => {
-                        const sid = `G-${n}`;
-                        return (
-                          <Seat
-                            key={n}
-                            id={sid}
-                            label={n}
-                            variant="green"
-                            size="normal"
-                            selected={!!selectedSeats[sid]}
-                            booked={!!bookedSeatIds[sid]}
-                            heldByOther={
-                              !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
-                            }
-                            priceUah={priceForSeatId(sid)}
-                            onToggle={onSeatToggle}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div className="flex gap-2">
-                      {bottomBlue.map((n) => {
-                        const sid = `B-${n}`;
-                        return (
-                          <Seat
-                            key={n}
-                            id={sid}
-                            label={n}
-                            variant="blue"
-                            size="large"
-                            selected={!!selectedSeats[sid]}
-                            booked={!!bookedSeatIds[sid]}
-                            heldByOther={
-                              !!remoteDraftSeatIds[sid] && !selectedSeats[sid]
-                            }
-                            priceUah={priceForSeatId(sid)}
-                            onToggle={onSeatToggle}
-                          />
-                        );
-                      })}
+                  {/* Права зовнішня колонка (1–4 / 5–8) */}
+                  <div className={stripCol}>
+                    <div className={seatGroupCol}>{rightOuterTop.map(seatEl)}</div>
+                    <div className={seatGroupCol}>
+                      {rightOuterBottom.map(seatEl)}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex w-[36px] shrink-0 flex-col items-center gap-1 border-l border-zinc-200/80 py-4 pl-0.5">
-                  <LadderIcon />
-                  <Seat
-                    id="R-8"
-                    label={8}
-                    variant="blue"
-                    size="large"
-                    selected={!!selectedSeats["R-8"]}
-                    booked={!!bookedSeatIds["R-8"]}
-                    heldByOther={
-                      !!remoteDraftSeatIds["R-8"] && !selectedSeats["R-8"]
-                    }
-                    priceUah={priceForSeatId("R-8")}
-                    onToggle={onSeatToggle}
-                  />
-                  <LadderIcon />
-                  <Seat
-                    id="R-10"
-                    label={10}
-                    variant="blue"
-                    size="large"
-                    selected={!!selectedSeats["R-10"]}
-                    booked={!!bookedSeatIds["R-10"]}
-                    heldByOther={
-                      !!remoteDraftSeatIds["R-10"] && !selectedSeats["R-10"]
-                    }
-                    priceUah={priceForSeatId("R-10")}
-                    onToggle={onSeatToggle}
-                  />
-                  <LadderIcon />
-                </div>
+                {/* Нижній ряд: 30 → 17 */}
+                <div className={stripRow}>{bottomRow.map(seatEl)}</div>
               </div>
             </div>
           </div>
