@@ -52,6 +52,10 @@ function friendlyClientError(raw: string | null): string {
   ) {
     return "Сервіс тимчасово недоступний. Спробуйте пізніше або оберіть інший спосіб оплати.";
   }
+  // Технічні помилки валідації/парсингу тіла — не показуємо юзеру як є.
+  if (/JSON|тіло запиту|Некоректн/i.test(r)) {
+    return "Перевірте, будь ласка, введені дані й спробуйте ще раз.";
+  }
   return r;
 }
 
@@ -69,6 +73,8 @@ export function BookingSidePanel({
   const [payment, setPayment] = useState<PaymentMethod>("monobank");
   const [details, setDetails] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  /** Місця, зафіксовані на момент відправки (вибір у батька після цього скидається). */
+  const [bookedSeats, setBookedSeats] = useState<string[]>([]);
   const [payPending, setPayPending] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
@@ -104,6 +110,7 @@ export function BookingSidePanel({
           setPayError(friendlyClientError(err));
           return;
         }
+        setBookedSeats(selectedSeatIds);
         onBookingSaved?.(selectedSeatIds);
         setSubmitted(true);
       } catch {
@@ -239,9 +246,30 @@ export function BookingSidePanel({
               <p className="text-2xl font-semibold text-slate-900">
                 Дякуємо!
               </p>
-              <p className="mt-3 text-sm font-medium leading-relaxed text-slate-700">
-                Заявку збережено. Найближчим часом з вами зв&apos;яжеться
-                адміністратор Samwood.
+              {bookedSeats.length > 0 ? (
+                <>
+                  <p className="mt-3 text-sm font-medium leading-relaxed text-slate-700">
+                    Ви забронювали:
+                  </p>
+                  <ul className="mx-auto mt-3 flex max-w-[240px] flex-col gap-1.5 text-left">
+                    {bookedSeats.map((id) => (
+                      <li
+                        key={id}
+                        className="flex items-center gap-2 text-[13px] font-semibold text-slate-800"
+                      >
+                        <span
+                          className="h-3 w-3 shrink-0 rounded border border-black/10"
+                          style={{ backgroundColor: swatchForSeatId(id) }}
+                          aria-hidden
+                        />
+                        {formatSeatLineUk(id)}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              <p className="mt-4 text-sm font-medium leading-relaxed text-slate-700">
+                Найближчим часом з вами зв&apos;яжеться адміністратор Samwood.
               </p>
             </motion.div>
           ) : (

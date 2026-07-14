@@ -1,6 +1,5 @@
 import "reflect-metadata";
 import type { DataSource } from "typeorm";
-import { BookingRequest as BookingRequestEntity } from "@/entities/booking-request.entity";
 
 /**
  * Джерело правди про зайнятість місць — таблиця `seat_bookings`
@@ -55,37 +54,43 @@ export async function createConfirmedBookingWithSeats(
   ds: DataSource,
   input: CashBookingInput,
 ): Promise<{ id: string }> {
-  const seatsJson = Object.fromEntries(input.seatIds.map((id) => [id, true]));
+  const seatsJson = JSON.stringify(
+    Object.fromEntries(input.seatIds.map((id) => [id, true])),
+  );
   const qr = ds.createQueryRunner();
   await qr.connect();
   await qr.startTransaction();
   try {
-    const repo = qr.manager.getRepository(BookingRequestEntity);
-    const row = repo.create({
-      visitDate: input.visitDate,
-      fullName: input.fullName,
-      phone: input.phone,
-      paymentMethod: input.paymentMethod,
-      paymentStatus: "requested",
-      amountKopiyky: input.amountKopiyky,
-      paidAt: null,
-      details: input.details,
-      seatsJson,
-      monobankInvoiceId: null,
-      paymentPayloadJson: null,
-    });
-    await repo.save(row);
+    // Чистий SQL (без getRepository за класом) — стабільно в dev/HMR і проді.
+    const inserted: Array<{ id: string }> = await qr.query(
+      `INSERT INTO "booking_requests"
+         ("visitDate", "fullName", "phone", "paymentMethod", "paymentStatus",
+          "amountKopiyky", "paidAt", "details", "seatsJson",
+          "monobankInvoiceId", "paymentPayloadJson")
+       VALUES ($1, $2, $3, $4, 'requested', $5, NULL, $6, $7::jsonb, NULL, NULL)
+       RETURNING "id"`,
+      [
+        input.visitDate,
+        input.fullName,
+        input.phone,
+        input.paymentMethod,
+        input.amountKopiyky,
+        input.details,
+        seatsJson,
+      ],
+    );
+    const id = inserted[0].id;
 
     for (const seatId of input.seatIds) {
       await qr.query(
         `INSERT INTO "seat_bookings" ("bookingRequestId", "visitDate", "seatId")
          VALUES ($1, $2, $3)`,
-        [row.id, input.visitDateKey, seatId],
+        [id, input.visitDateKey, seatId],
       );
     }
 
     await qr.commitTransaction();
-    return { id: row.id };
+    return { id };
   } catch (e) {
     await qr.rollbackTransaction();
     if (isUniqueViolation(e)) throw new SeatConflictError(input.seatIds);
