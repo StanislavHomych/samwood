@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
+import { loadOccupiedSeatIdsForVisitDay } from "@/lib/booking/load-occupied-seat-ids";
 import { createMonobankInvoice, isMonobankConfigured } from "@/lib/payments/monobank";
 import { publicSiteBaseUrl } from "@/lib/site-url";
 import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
@@ -30,6 +31,26 @@ export async function POST(req: Request) {
       },
       { status: 503 },
     );
+  }
+
+  // Рання перевірка зайнятості: не даємо платити за вже заброньоване місце.
+  // Best-effort — якщо читання впало, не блокуємо оплату (persist нижче все одно
+  // ловить гонку, а закріплення місць — атомарне через UNIQUE-індекс).
+  try {
+    const taken = await loadOccupiedSeatIdsForVisitDay(visitDateKey);
+    const clash = seatIds.filter((id) => taken.has(id));
+    if (clash.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Частина місць уже зайнята іншою заявкою. Оновіть сторінку й оберіть інші.",
+          clashSeatIds: clash,
+        },
+        { status: 409 },
+      );
+    }
+  } catch (occErr) {
+    console.error("[monobank-invoice] occupancy pre-check failed", occErr);
   }
 
   const totalUah = sumSeatPricesForDate(seatIds, visitDateKey);

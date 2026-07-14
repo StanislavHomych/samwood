@@ -113,18 +113,19 @@ export function PoolMap({
     setPanY(0);
   }, []);
 
-  // 60 лежаків навколо басейну (дзеркальне розташування).
-  // Ліворуч — дві колонки (1–8 зовні, 9–16 всередині), низ 17–30,
-  // праворуч — дві колонки (31–39 всередині, 40–45 зовні), верх 46–60.
-  const topRow = useMemo(() => range(46, 60), []); // 46 → 60 (зліва направо)
-  const bottomRow = useMemo(() => range(17, 30), []); // 17 → 30 (зліва направо)
-  const leftInner = useMemo(() => range(31, 39).reverse(), []); // 39 → 31 (згори вниз)
-  const leftOuterTop = useMemo(() => [45, 44], []);
-  const leftOuterBottom = useMemo(() => [43, 42, 41, 40], []);
-  const rightInnerTop = useMemo(() => [9, 10, 11, 12], []);
-  const rightInnerBottom = useMemo(() => [13, 14, 15, 16], []);
-  const rightOuterTop = useMemo(() => [1, 2, 3, 4], []);
-  const rightOuterBottom = useMemo(() => [5, 6, 7, 8], []);
+  // 60 лежаків навколо басейну (нова нумерація).
+  // Ліворуч — дві колонки: зовні 8→1, всередині 16→9 (згори вниз).
+  // Верхній ряд 17–30, праворуч — внутрішня 31→39 та зовнішня 40→45,
+  // нижній ряд 46–60.
+  const topRow = useMemo(() => range(17, 30), []); // 17 → 30 (зліва направо)
+  const bottomRow = useMemo(() => range(46, 60), []); // 46 → 60 (зліва направо)
+  const leftInner = useMemo(() => range(31, 39), []); // 31 → 39 (згори вниз)
+  const leftOuterTop = useMemo(() => [40, 41], []);
+  const leftOuterBottom = useMemo(() => [42, 43, 44, 45], []);
+  const rightInnerTop = useMemo(() => [16, 15, 14, 13], []);
+  const rightInnerBottom = useMemo(() => [12, 11, 10, 9], []);
+  const rightOuterTop = useMemo(() => [8, 7, 6, 5], []);
+  const rightOuterBottom = useMemo(() => [4, 3, 2, 1], []);
 
   const loungerPrice = visitDateKey
     ? loungerPriceForVisit(visitDateKey)
@@ -374,12 +375,12 @@ export function PoolMap({
                 className="relative z-10 flex w-full flex-col items-center justify-center gap-3 bg-white px-5 py-6"
                 style={{ minHeight: PLAN_H }}
               >
-                {/* Верхній ряд: 60 → 46 */}
+                {/* Верхній ряд: 17 → 30 */}
                 <div className={stripRow}>{topRow.map(seatEl)}</div>
 
-                {/* Середня смуга (дзеркально): 1–16 ліворуч · басейн · 31–45 праворуч */}
+                {/* Середня смуга: 1–16 ліворуч · басейн · 31–45 праворуч */}
                 <div className="flex w-full items-stretch justify-center gap-2.5">
-                  {/* Зовнішня колонка 1–4 / 5–8 (ліворуч) */}
+                  {/* Зовнішня колонка (ліворуч) 8 → 1 */}
                   <div className={stripCol}>
                     <div className={seatGroupCol}>{rightOuterTop.map(seatEl)}</div>
                     <div className={seatGroupCol}>
@@ -387,7 +388,7 @@ export function PoolMap({
                     </div>
                   </div>
 
-                  {/* Внутрішня колонка 9–12 / 13–16 (ліворуч) */}
+                  {/* Внутрішня колонка (ліворуч) 16 → 9 */}
                   <div className={stripCol}>
                     <div className={seatGroupCol}>{rightInnerTop.map(seatEl)}</div>
                     <div className={seatGroupCol}>
@@ -412,12 +413,12 @@ export function PoolMap({
                     </span>
                   </div>
 
-                  {/* Внутрішня колонка 39 → 31 (праворуч) */}
+                  {/* Внутрішня колонка (праворуч) 31 → 39 */}
                   <div className={`${stripCol} justify-center`}>
                     <div className={seatGroupCol}>{leftInner.map(seatEl)}</div>
                   </div>
 
-                  {/* Зовнішня колонка 45→40 (праворуч, менший блок; підняті догори, вільне місце лишається знизу) */}
+                  {/* Зовнішня колонка (праворуч) 40 → 45 (менший блок; підняті догори) */}
                   <div className={`${stripCol} justify-start`}>
                     <div className={seatGroupCol}>
                       {leftOuterTop.map(seatEl)}
@@ -426,7 +427,7 @@ export function PoolMap({
                   </div>
                 </div>
 
-                {/* Нижній ряд: 30 → 17 */}
+                {/* Нижній ряд: 46 → 60 */}
                 <div className={stripRow}>{bottomRow.map(seatEl)}</div>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 import { claimSeatsForPaidBooking } from "@/lib/booking/seat-bookings";
 import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-email";
+import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
 import { formatVisitDateKey } from "@/lib/dates/visit-date-key";
 import {
   isMonobankConfigured,
@@ -37,7 +38,15 @@ export async function POST(req: Request) {
   }
 
   const xSign = req.headers.get("x-sign") ?? "";
-  const valid = await verifyMonobankWebhookSignature(rawBody, xSign).catch(() => false);
+  let valid: boolean;
+  try {
+    valid = await verifyMonobankWebhookSignature(rawBody, xSign);
+  } catch (verifyErr) {
+    // Не змогли перевірити підпис (напр. впав GET pubkey) — це НЕ «поганий підпис».
+    // Повертаємо 5xx, щоб Monobank повторив доставку пізніше, а не втратив подію.
+    console.error("[monobank-webhook] signature verification unavailable", verifyErr);
+    return NextResponse.json({ error: "verification unavailable" }, { status: 503 });
+  }
   if (!valid) {
     console.warn("[monobank-webhook] invalid X-Sign signature");
     return NextResponse.json({ error: "invalid signature" }, { status: 400 });
@@ -87,16 +96,36 @@ export async function POST(req: Request) {
         ({ conflicted } = await claimSeatsForPaidBooking(ds, row.id, rowKey, rowSeatIds));
       }
     }
+    // Звірка суми з ціною за місця (defense-in-depth) — лише аудит-флаг.
+    let amountMismatch:
+      | { expectedKopiyky: number; paidKopiyky: number }
+      | undefined;
+    if (status === "success" && row.amountKopiyky != null && rowSeatIds.length) {
+      const expectedKopiyky = Math.round(
+        sumSeatPricesForDate(rowSeatIds, rowKey) * 100,
+      );
+      if (row.amountKopiyky !== expectedKopiyky) {
+        amountMismatch = { expectedKopiyky, paidKopiyky: row.amountKopiyky };
+        console.error(
+          "[monobank-webhook] сума оплати не збігається з ціною за місця",
+          { ...amountMismatch, id: row.id, rowKey, rowSeatIds },
+        );
+      }
+    }
+
     row.paymentPayloadJson = {
       ...(row.paymentPayloadJson ?? {}),
       source: "monobank_webhook",
       webhook: payload,
       ...(conflicted.length ? { seatConflicts: conflicted } : {}),
+      ...(amountMismatch ? { amountMismatch } : {}),
     };
     await repo.save(row);
 
-    // Лист-підтвердження клієнту після успішної оплати (один раз на бронь).
-    if (status === "success") {
+    // Лист-підтвердження — лише коли всі місця реально закріплені за бронню.
+    // Якщо є конфлікт (клієнт заплатив, місце зайняте) — хибний «підтверджено»
+    // не шлемо; бронь лишається з seatConflicts для ручного розбору/рефанду.
+    if (status === "success" && conflicted.length === 0) {
       await deliverBookingConfirmationOnce(ds, {
         id: row.id,
         email: row.email,
@@ -108,6 +137,12 @@ export async function POST(req: Request) {
         paymentMethod: row.paymentMethod,
         details: row.details,
       });
+    } else if (status === "success" && conflicted.length > 0) {
+      console.error(
+        "[monobank-webhook] оплачено, але місця конфліктують — лист не надіслано",
+        row.id,
+        conflicted,
+      );
     }
 
     return NextResponse.json({ ok: true });

@@ -125,6 +125,21 @@ export async function claimSeatsForPaidBooking(
     );
     if (res.length > 0) claimed.push(seatId);
   }
-  const conflicted = seatIds.filter((s) => !claimed.includes(s));
-  return { claimed, conflicted };
+
+  // Місця, які не вставились, могли вже належати ЦІЙ САМІЙ броні
+  // (напр. webhook закріпив їх раніше, а потім прийшов client-confirm).
+  // Такі — не конфлікт, а вже закріплені за нами.
+  const notInserted = seatIds.filter((s) => !claimed.includes(s));
+  let ownedAlready: string[] = [];
+  if (notInserted.length > 0) {
+    const owned: Array<{ seatId: string }> = await ds.query(
+      `SELECT "seatId" FROM "seat_bookings"
+         WHERE "visitDate" = $1 AND "seatId" = ANY($2) AND "bookingRequestId" = $3`,
+      [visitDateKey, notInserted, bookingRequestId],
+    );
+    ownedAlready = owned.map((r) => r.seatId);
+  }
+
+  const conflicted = notInserted.filter((s) => !ownedAlready.includes(s));
+  return { claimed: [...claimed, ...ownedAlready], conflicted };
 }

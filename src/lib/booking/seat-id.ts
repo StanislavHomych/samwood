@@ -1,13 +1,15 @@
-/** Дозволені id місць з карти басейну (захист від підробки суми на сервері). */
+/** Кількість лежаків на карті басейну (L-1 … L-60). */
+export const POOL_LOUNGER_COUNT = 60;
+
+/**
+ * Дозволені id місць з карти басейну (захист від підробки суми/фантомних місць
+ * на сервері). Наразі карта — це рівно 60 лежаків `L-1 … L-60`.
+ */
 export function isAllowedPoolSeatId(id: string): boolean {
-  return (
-    /^S2-\d{1,3}$/.test(id) ||
-    /^S3-\d{1,3}$/.test(id) ||
-    /^L-\d{1,3}$/.test(id) ||
-    /^G-\d{1,3}$/.test(id) ||
-    /^B-\d{1,3}$/.test(id) ||
-    /^R-\d{1,3}$/.test(id)
-  );
+  const m = /^L-(\d{1,3})$/.exec(id);
+  if (!m) return false;
+  const n = Number(m[1]);
+  return n >= 1 && n <= POOL_LOUNGER_COUNT;
 }
 
 export const MAX_SEATS_PER_BOOKING = 40;

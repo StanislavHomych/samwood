@@ -7,7 +7,30 @@ import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-
 import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { isAllowedPoolSeatId, MAX_SEATS_PER_BOOKING } from "@/lib/booking/seat-id";
 import { getMonobankInvoiceStatus, isMonobankConfigured } from "@/lib/payments/monobank";
+import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
 import { z } from "zod";
+
+/**
+ * Звірка оплаченої суми з очікуваною ціною за місця (defense-in-depth).
+ * Суму інвойсу задає сервер, тож розбіжність — сигнал підробки/помилки.
+ * Не блокуємо вже оплаченого клієнта, лише лишаємо аудит-флаг для адмінки.
+ */
+function amountMismatchFlag(
+  paidKopiyky: number | null,
+  seatIds: string[],
+  visitDateKey: string,
+): { amountMismatch: { expectedKopiyky: number; paidKopiyky: number } } | null {
+  if (paidKopiyky == null) return null;
+  const expectedKopiyky = Math.round(
+    sumSeatPricesForDate(seatIds, visitDateKey) * 100,
+  );
+  if (paidKopiyky === expectedKopiyky) return null;
+  console.error(
+    "[monobank-confirm] сума оплати не збігається з ціною за місця",
+    { expectedKopiyky, paidKopiyky, visitDateKey, seatIds },
+  );
+  return { amountMismatch: { expectedKopiyky, paidKopiyky } };
+}
 
 export const runtime = "nodejs";
 
@@ -127,22 +150,35 @@ export async function POST(req: Request) {
         source: "pay_return_client_verified",
         monobankStatus: invoice.raw,
         ...(conflicted.length ? { seatConflicts: conflicted } : {}),
+        ...(amountMismatchFlag(
+          existing.amountKopiyky,
+          rowSeatIds.length ? rowSeatIds : seatsToClaim,
+          rowKey,
+        ) ?? {}),
       };
       await repo.save(existing);
 
       await releaseHoldsForSeats(rowKey, seatsToClaim).catch(() => {});
 
-      await deliverBookingConfirmationOnce(ds, {
-        id: existing.id,
-        email: existing.email,
-        fullName: existing.fullName,
-        phone: existing.phone,
-        visitDateKey: rowKey,
-        seatIds: seatsToClaim,
-        amountKopiyky: existing.amountKopiyky,
-        paymentMethod: existing.paymentMethod,
-        details: existing.details,
-      });
+      if (conflicted.length === 0) {
+        await deliverBookingConfirmationOnce(ds, {
+          id: existing.id,
+          email: existing.email,
+          fullName: existing.fullName,
+          phone: existing.phone,
+          visitDateKey: rowKey,
+          seatIds: seatsToClaim,
+          amountKopiyky: existing.amountKopiyky,
+          paymentMethod: existing.paymentMethod,
+          details: existing.details,
+        });
+      } else {
+        console.error(
+          "[monobank-confirm] оплачено, але місця конфліктують — лист не надіслано",
+          existing.id,
+          conflicted,
+        );
+      }
 
       return NextResponse.json({
         ok: true,
@@ -172,6 +208,8 @@ export async function POST(req: Request) {
         seatIds,
         clientAmountKopiyky: body.amountKopiyky ?? null,
         monobankStatus: invoice.raw,
+        ...(amountMismatchFlag(verifiedAmountKopiyky, seatIds, body.visitDateKey) ??
+          {}),
       },
     });
     await repo.save(row);
@@ -192,17 +230,25 @@ export async function POST(req: Request) {
 
     await releaseHoldsForSeats(body.visitDateKey, seatIds).catch(() => {});
 
-    await deliverBookingConfirmationOnce(ds, {
-      id: row.id,
-      email: row.email,
-      fullName: row.fullName,
-      phone: row.phone,
-      visitDateKey: body.visitDateKey,
-      seatIds,
-      amountKopiyky: row.amountKopiyky,
-      paymentMethod: row.paymentMethod,
-      details: row.details,
-    });
+    if (conflicted.length === 0) {
+      await deliverBookingConfirmationOnce(ds, {
+        id: row.id,
+        email: row.email,
+        fullName: row.fullName,
+        phone: row.phone,
+        visitDateKey: body.visitDateKey,
+        seatIds,
+        amountKopiyky: row.amountKopiyky,
+        paymentMethod: row.paymentMethod,
+        details: row.details,
+      });
+    } else {
+      console.error(
+        "[monobank-confirm] оплачено, але місця конфліктують — лист не надіслано",
+        row.id,
+        conflicted,
+      );
+    }
 
     return NextResponse.json({ ok: true, id: row.id, seatConflicts: conflicted });
   } catch (e) {
