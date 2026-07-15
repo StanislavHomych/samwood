@@ -9,7 +9,7 @@ import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
 import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-email";
 import { getDataSource } from "@/lib/db";
-import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
+import { sumBookingPriceUah } from "@/lib/pool/seat-pricing";
 
 export const runtime = "nodejs";
 
@@ -45,11 +45,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   }
 
-  const { visitDate, visitDateKey, seatIds, fullName, phone, email, details } =
+  const { visitDate, visitDateKey, seatIds, childSeatIds, fullName, phone, email, details } =
     parsed.data;
   const amountKopiyky = Math.max(
     0,
-    Math.round(sumSeatPricesForDate(seatIds, visitDateKey) * 100),
+    Math.round(sumBookingPriceUah(seatIds, childSeatIds, visitDateKey) * 100),
   );
 
   try {
@@ -81,6 +81,7 @@ export async function POST(req: Request) {
       amountKopiyky,
       details: details || null,
       seatIds,
+      childSeatIds,
     });
 
     await releaseHoldsForSeats(visitDateKey, seatIds).catch(() => {});
@@ -93,6 +94,7 @@ export async function POST(req: Request) {
       phone,
       visitDateKey,
       seatIds,
+      childSeatIds,
       amountKopiyky,
       paymentMethod,
       details: details || null,

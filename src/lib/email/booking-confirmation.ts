@@ -7,6 +7,8 @@ export type BookingConfirmationInput = {
   phone: string;
   visitDateKey: string;
   seatIds: string[];
+  /** Місця з дитячим тарифом (спец-дні) — позначаються в переліку. */
+  childSeatIds?: string[];
   amountKopiyky: number | null;
   paymentMethod: string;
   details?: string | null;
@@ -55,7 +57,10 @@ export function buildBookingConfirmationEmail(input: BookingConfirmationInput): 
 } {
   const dateUk = formatVisitDateUk(input.visitDateKey);
   const paymentLabel = PAYMENT_LABEL[input.paymentMethod] ?? input.paymentMethod;
-  const seatLines = input.seatIds.map((id) => formatSeatLineUk(id));
+  const childSet = new Set(input.childSeatIds ?? []);
+  const seatLines = input.seatIds.map(
+    (id) => formatSeatLineUk(id) + (childSet.has(id) ? " — дитячий" : ""),
+  );
   const total = formatMoneyKop(input.amountKopiyky);
   const name = input.fullName?.trim() || "гостю";
 

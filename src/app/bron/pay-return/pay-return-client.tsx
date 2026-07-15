@@ -10,6 +10,8 @@ type PaymentReceipt = {
   createdAtIso: string;
   visitDateKey: string;
   seatIds: string[];
+  /** Місця з дитячим тарифом (спец-дні). */
+  childSeatIds?: string[];
   fullName: string;
   phone: string;
   email?: string;
@@ -29,6 +31,13 @@ function parseReceipt(raw: string): PaymentReceipt | null {
 
     const seatIds = Array.isArray((parsed as { seatIds?: unknown }).seatIds)
       ? (parsed as { seatIds: unknown[] }).seatIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      : [];
+    const childSeatIds = Array.isArray(
+      (parsed as { childSeatIds?: unknown }).childSeatIds,
+    )
+      ? (parsed as { childSeatIds: unknown[] }).childSeatIds.filter(
           (id): id is string => typeof id === "string",
         )
       : [];
@@ -74,6 +83,7 @@ function parseReceipt(raw: string): PaymentReceipt | null {
       createdAtIso,
       visitDateKey,
       seatIds,
+      childSeatIds,
       fullName,
       phone,
       email,
@@ -190,7 +200,10 @@ export function PayReturnClient() {
             </p>
             <ul className="mt-2 space-y-1 font-mono text-[11px] text-slate-800">
               {receipt.seatIds.map((id) => (
-                <li key={id}>- {formatSeatLineUk(id)}</li>
+                <li key={id}>
+                  - {formatSeatLineUk(id)}
+                  {receipt.childSeatIds?.includes(id) ? " (дитячий)" : ""}
+                </li>
               ))}
             </ul>
           </div>

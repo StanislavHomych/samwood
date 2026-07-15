@@ -44,6 +44,8 @@ type CashBookingInput = {
   amountKopiyky: number;
   details: string | null;
   seatIds: string[];
+  /** Місця з дитячим тарифом (спец-дні). */
+  childSeatIds?: string[];
 };
 
 /**
@@ -58,6 +60,9 @@ export async function createConfirmedBookingWithSeats(
   const seatsJson = JSON.stringify(
     Object.fromEntries(input.seatIds.map((id) => [id, true])),
   );
+  const payloadJson = input.childSeatIds?.length
+    ? JSON.stringify({ childSeatIds: input.childSeatIds })
+    : null;
   const qr = ds.createQueryRunner();
   await qr.connect();
   await qr.startTransaction();
@@ -68,7 +73,7 @@ export async function createConfirmedBookingWithSeats(
          ("visitDate", "fullName", "phone", "email", "paymentMethod", "paymentStatus",
           "amountKopiyky", "paidAt", "details", "seatsJson",
           "monobankInvoiceId", "paymentPayloadJson")
-       VALUES ($1, $2, $3, $4, $5, 'requested', $6, NULL, $7, $8::jsonb, NULL, NULL)
+       VALUES ($1, $2, $3, $4, $5, 'requested', $6, NULL, $7, $8::jsonb, NULL, $9::jsonb)
        RETURNING "id"`,
       [
         input.visitDate,
@@ -79,6 +84,7 @@ export async function createConfirmedBookingWithSeats(
         input.amountKopiyky,
         input.details,
         seatsJson,
+        payloadJson,
       ],
     );
     const id = inserted[0].id;

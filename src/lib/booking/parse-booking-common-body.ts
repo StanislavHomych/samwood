@@ -6,6 +6,8 @@ export type BookingCommonBody = {
   visitDateKey: string;
   visitDate: Date;
   seatIds: string[];
+  /** Місця, позначені як дитячі (підмножина seatIds; тариф діє лише у спец-дні). */
+  childSeatIds: string[];
   fullName: string;
   phone: string;
   email: string;
@@ -21,6 +23,7 @@ const bookingCommonSchema = z
       .array(z.string())
       .min(1, `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`)
       .max(MAX_SEATS_PER_BOOKING, `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`),
+    childSeatIds: z.array(z.string()).max(MAX_SEATS_PER_BOOKING).optional().default([]),
     fullName: z.string().trim().min(2, "Вкажіть повне ім'я").max(200, "Вкажіть повне ім'я"),
     phone: z.string().trim().min(5, "Вкажіть телефон").max(32, "Вкажіть телефон"),
     email: z.string().trim().email("Вкажіть коректний email").max(200, "Задовгий email"),
@@ -36,7 +39,8 @@ export function parseBookingCommonBody(raw: unknown):
   if (!parsed.success) {
     return { ok: false, error: "Некоректний JSON", status: 400 };
   }
-  const { visitDateKey, seatIds, fullName, phone, email, details } = parsed.data;
+  const { visitDateKey, seatIds, childSeatIds, fullName, phone, email, details } =
+    parsed.data;
 
   const visitDate = parseVisitDateKey(visitDateKey);
   if (!visitDate) {
@@ -50,12 +54,18 @@ export function parseBookingCommonBody(raw: unknown):
     seen.add(id);
   }
 
+  // Дитячі місця — лише з-поміж обраних (зайве мовчки відкидаємо).
+  const childSet = new Set(
+    childSeatIds.filter((id) => seen.has(id)),
+  );
+
   return {
     ok: true,
     data: {
       visitDateKey,
       visitDate,
       seatIds: [...seen],
+      childSeatIds: [...childSet],
       fullName,
       phone,
       email,

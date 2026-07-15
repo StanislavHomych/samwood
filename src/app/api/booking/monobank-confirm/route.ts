@@ -7,29 +7,34 @@ import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-
 import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { isAllowedPoolSeatId, MAX_SEATS_PER_BOOKING } from "@/lib/booking/seat-id";
 import { getMonobankInvoiceStatus, isMonobankConfigured } from "@/lib/payments/monobank";
-import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
+import { sumBookingPriceUah } from "@/lib/pool/seat-pricing";
 import { z } from "zod";
 
 /**
- * Звірка оплаченої суми з очікуваною ціною за місця (defense-in-depth).
- * Суму інвойсу задає сервер, тож розбіжність — сигнал підробки/помилки.
+ * Звірка оплаченої суми з очікуваною (defense-in-depth).
+ * Очікувана — сума, яку сервер зафіксував при створенні інвойсу (враховує
+ * дитячі місця у спец-дні); розбіжність — сигнал підробки/помилки.
  * Не блокуємо вже оплаченого клієнта, лише лишаємо аудит-флаг для адмінки.
  */
 function amountMismatchFlag(
   paidKopiyky: number | null,
-  seatIds: string[],
-  visitDateKey: string,
+  expectedKopiyky: number | null,
 ): { amountMismatch: { expectedKopiyky: number; paidKopiyky: number } } | null {
-  if (paidKopiyky == null) return null;
-  const expectedKopiyky = Math.round(
-    sumSeatPricesForDate(seatIds, visitDateKey) * 100,
-  );
+  if (paidKopiyky == null || expectedKopiyky == null) return null;
   if (paidKopiyky === expectedKopiyky) return null;
-  console.error(
-    "[monobank-confirm] сума оплати не збігається з ціною за місця",
-    { expectedKopiyky, paidKopiyky, visitDateKey, seatIds },
-  );
+  console.error("[monobank-confirm] сума оплати не збігається з очікуваною", {
+    expectedKopiyky,
+    paidKopiyky,
+  });
   return { amountMismatch: { expectedKopiyky, paidKopiyky } };
+}
+
+/** Дитячі місця зі збереженого payload (masked unknown → string[]). */
+function childSeatIdsFromPayload(payload: Record<string, unknown> | null): string[] {
+  const raw = payload?.childSeatIds;
+  return Array.isArray(raw)
+    ? raw.filter((x): x is string => typeof x === "string")
+    : [];
 }
 
 export const runtime = "nodejs";
@@ -42,6 +47,7 @@ const confirmBodySchema = z
       .array(z.string())
       .min(1, `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`)
       .max(MAX_SEATS_PER_BOOKING, `Оберіть від 1 до ${MAX_SEATS_PER_BOOKING} місць`),
+    childSeatIds: z.array(z.string()).max(MAX_SEATS_PER_BOOKING).optional().default([]),
     fullName: z.string().trim().max(200).optional().default(""),
     phone: z.string().trim().min(5, "Не вказано телефон").max(32, "Не вказано телефон"),
     email: z.string().trim().email().max(200).optional().default(""),
@@ -80,6 +86,8 @@ export async function POST(req: Request) {
     seen.add(id);
   }
   const seatIds = [...seen];
+  // Дитячі місця — лише з-поміж обраних (зайве мовчки відкидаємо).
+  const bodyChildSeatIds = [...new Set(body.childSeatIds.filter((id) => seen.has(id)))];
 
   if (!isMonobankConfigured()) {
     return NextResponse.json({ error: "Онлайн-оплата не налаштована" }, { status: 503 });
@@ -122,6 +130,9 @@ export async function POST(req: Request) {
     if (existing) {
       // Заявку створено при виставленні рахунку: місця/дату/суму не даємо
       // переписати клієнтом — лише фіксуємо факт оплати.
+      // Очікувана сума — серверна, зафіксована при створенні інвойсу.
+      const expectedKopiyky = existing.amountKopiyky;
+      const rowChildSeatIds = childSeatIdsFromPayload(existing.paymentPayloadJson);
       if (existing.paymentStatus !== "paid") {
         existing.paymentStatus = "paid";
         existing.paidAt = paidAt;
@@ -150,11 +161,7 @@ export async function POST(req: Request) {
         source: "pay_return_client_verified",
         monobankStatus: invoice.raw,
         ...(conflicted.length ? { seatConflicts: conflicted } : {}),
-        ...(amountMismatchFlag(
-          existing.amountKopiyky,
-          rowSeatIds.length ? rowSeatIds : seatsToClaim,
-          rowKey,
-        ) ?? {}),
+        ...(amountMismatchFlag(verifiedAmountKopiyky, expectedKopiyky) ?? {}),
       };
       await repo.save(existing);
 
@@ -168,6 +175,7 @@ export async function POST(req: Request) {
           phone: existing.phone,
           visitDateKey: rowKey,
           seatIds: seatsToClaim,
+          childSeatIds: rowChildSeatIds.length ? rowChildSeatIds : bodyChildSeatIds,
           amountKopiyky: existing.amountKopiyky,
           paymentMethod: existing.paymentMethod,
           details: existing.details,
@@ -206,10 +214,18 @@ export async function POST(req: Request) {
         source: "pay_return_client_verified",
         visitDateKey: body.visitDateKey,
         seatIds,
+        ...(bodyChildSeatIds.length ? { childSeatIds: bodyChildSeatIds } : {}),
         clientAmountKopiyky: body.amountKopiyky ?? null,
         monobankStatus: invoice.raw,
-        ...(amountMismatchFlag(verifiedAmountKopiyky, seatIds, body.visitDateKey) ??
-          {}),
+        ...(amountMismatchFlag(
+          verifiedAmountKopiyky,
+          Math.max(
+            100,
+            Math.round(
+              sumBookingPriceUah(seatIds, bodyChildSeatIds, body.visitDateKey) * 100,
+            ),
+          ),
+        ) ?? {}),
       },
     });
     await repo.save(row);
@@ -238,6 +254,7 @@ export async function POST(req: Request) {
         phone: row.phone,
         visitDateKey: body.visitDateKey,
         seatIds,
+        childSeatIds: bodyChildSeatIds,
         amountKopiyky: row.amountKopiyky,
         paymentMethod: row.paymentMethod,
         details: row.details,

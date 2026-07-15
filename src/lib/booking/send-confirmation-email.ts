@@ -9,6 +9,8 @@ export type ConfirmationEmailBooking = {
   phone: string;
   visitDateKey: string;
   seatIds: string[];
+  /** Місця з дитячим тарифом (спец-дні). */
+  childSeatIds?: string[];
   amountKopiyky: number | null;
   paymentMethod: string;
   details?: string | null;
@@ -56,6 +58,7 @@ export async function deliverBookingConfirmationOnce(
         phone: booking.phone,
         visitDateKey: booking.visitDateKey,
         seatIds: booking.seatIds,
+        childSeatIds: booking.childSeatIds ?? [],
         amountKopiyky: booking.amountKopiyky,
         paymentMethod: booking.paymentMethod,
         details: booking.details ?? null,

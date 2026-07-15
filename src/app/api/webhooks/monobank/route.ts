@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 import { claimSeatsForPaidBooking } from "@/lib/booking/seat-bookings";
 import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-email";
-import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
+import { sumBookingPriceUah } from "@/lib/pool/seat-pricing";
 import { formatVisitDateKey } from "@/lib/dates/visit-date-key";
 import {
   isMonobankConfigured,
@@ -84,6 +84,19 @@ export async function POST(req: Request) {
     let conflicted: string[] = [];
     const rowKey = formatVisitDateKey(row.visitDate);
     const rowSeatIds = Object.keys(row.seatsJson ?? {});
+    // Дитячі місця (спец-дні) — збережені при створенні інвойсу.
+    const rawChild = row.paymentPayloadJson?.childSeatIds;
+    const childSeatIds = Array.isArray(rawChild)
+      ? rawChild.filter((x): x is string => typeof x === "string")
+      : [];
+    // Очікувана сума — та, що сервер зафіксував при створенні інвойсу
+    // (залежить від дитячих місць); fallback — перерахунок.
+    const expectedKopiyky =
+      row.amountKopiyky ??
+      Math.max(
+        100,
+        Math.round(sumBookingPriceUah(rowSeatIds, childSeatIds, rowKey) * 100),
+      );
     if (status === "success") {
       row.paidAt =
         typeof payload.modifiedDate === "string" && !Number.isNaN(new Date(payload.modifiedDate).getTime())
@@ -96,21 +109,20 @@ export async function POST(req: Request) {
         ({ conflicted } = await claimSeatsForPaidBooking(ds, row.id, rowKey, rowSeatIds));
       }
     }
-    // Звірка суми з ціною за місця (defense-in-depth) — лише аудит-флаг.
+    // Звірка оплаченої суми з очікуваною (defense-in-depth) — лише аудит-флаг.
     let amountMismatch:
       | { expectedKopiyky: number; paidKopiyky: number }
       | undefined;
-    if (status === "success" && row.amountKopiyky != null && rowSeatIds.length) {
-      const expectedKopiyky = Math.round(
-        sumSeatPricesForDate(rowSeatIds, rowKey) * 100,
+    if (
+      status === "success" &&
+      typeof payload.amount === "number" &&
+      payload.amount !== expectedKopiyky
+    ) {
+      amountMismatch = { expectedKopiyky, paidKopiyky: payload.amount };
+      console.error(
+        "[monobank-webhook] сума оплати не збігається з очікуваною",
+        { ...amountMismatch, id: row.id, rowKey, rowSeatIds },
       );
-      if (row.amountKopiyky !== expectedKopiyky) {
-        amountMismatch = { expectedKopiyky, paidKopiyky: row.amountKopiyky };
-        console.error(
-          "[monobank-webhook] сума оплати не збігається з ціною за місця",
-          { ...amountMismatch, id: row.id, rowKey, rowSeatIds },
-        );
-      }
     }
 
     row.paymentPayloadJson = {
@@ -133,6 +145,7 @@ export async function POST(req: Request) {
         phone: row.phone,
         visitDateKey: rowKey,
         seatIds: rowSeatIds,
+        childSeatIds,
         amountKopiyky: row.amountKopiyky,
         paymentMethod: row.paymentMethod,
         details: row.details,

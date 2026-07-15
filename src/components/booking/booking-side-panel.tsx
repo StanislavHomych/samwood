@@ -1,8 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
-import { formatSeatLineUk, priceForSeatOnDate } from "@/lib/pool/seat-pricing";
+import { useMemo, useState } from "react";
+import {
+  formatSeatLineUk,
+  priceForSeatOnDate,
+  specialEntryPricesForVisit,
+} from "@/lib/pool/seat-pricing";
 import { swatchForSeatId } from "@/lib/pool/seat-zone-palette";
 
 export type PaymentMethod = "monobank" | "cash" | "on_site";
@@ -70,6 +74,24 @@ export function BookingSidePanel({
   const [email, setEmail] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("monobank");
   const [details, setDetails] = useState("");
+  /** Місця, позначені як дитячі (діє лише у спец-дні). */
+  const [childSeats, setChildSeats] = useState<Record<string, boolean>>({});
+
+  /** Спец-тариф дня (дорослий/дитячий) або null. */
+  const specialPrices = specialEntryPricesForVisit(visitDateKey);
+  const childSeatIds = useMemo(
+    () => (specialPrices ? selectedSeatIds.filter((id) => childSeats[id]) : []),
+    [specialPrices, selectedSeatIds, childSeats],
+  );
+  /** Сума з урахуванням дитячих місць у спец-дні; інакше — з пропа. */
+  const effectiveTotalUah = useMemo(() => {
+    if (!specialPrices) return seatsTotalUah;
+    return selectedSeatIds.reduce(
+      (sum, id) =>
+        sum + (childSeats[id] ? specialPrices.childUah : specialPrices.adultUah),
+      0,
+    );
+  }, [specialPrices, selectedSeatIds, childSeats, seatsTotalUah]);
   const [submitted, setSubmitted] = useState(false);
   /** Місця, зафіксовані на момент відправки (вибір у батька після цього скидається). */
   const [bookedSeats, setBookedSeats] = useState<string[]>([]);
@@ -90,6 +112,7 @@ export function BookingSidePanel({
           body: JSON.stringify({
             visitDateKey,
             seatIds: selectedSeatIds,
+            childSeatIds,
             fullName: name,
             phone,
             email,
@@ -130,6 +153,7 @@ export function BookingSidePanel({
         body: JSON.stringify({
           visitDateKey,
           seatIds: selectedSeatIds,
+          childSeatIds,
           fullName: name,
           phone,
           email,
@@ -162,7 +186,7 @@ export function BookingSidePanel({
         "amountKopiyky" in data &&
         typeof (data as { amountKopiyky: unknown }).amountKopiyky === "number"
           ? (data as { amountKopiyky: number }).amountKopiyky
-          : Math.round(seatsTotalUah * 100);
+          : Math.round(effectiveTotalUah * 100);
       const invoiceId =
         typeof data === "object" &&
         data !== null &&
@@ -178,6 +202,7 @@ export function BookingSidePanel({
               createdAtIso: new Date().toISOString(),
               visitDateKey,
               seatIds: selectedSeatIds,
+              childSeatIds,
               fullName: name,
               phone,
               email,
@@ -297,6 +322,14 @@ export function BookingSidePanel({
                   </p>
                 ) : (
                   <>
+                    {specialPrices ? (
+                      <p className="mt-2 rounded-lg bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold leading-snug text-teal-900">
+                        Цього дня вхід: дорослий{" "}
+                        {specialPrices.adultUah.toLocaleString("uk-UA")} ₴ · дитячий{" "}
+                        {specialPrices.childUah.toLocaleString("uk-UA")} ₴ — позначте
+                        дитячі місця.
+                      </p>
+                    ) : null}
                     <ul className="mt-2 flex min-h-0 max-h-[min(40vh,14rem)] flex-col gap-2 overflow-y-auto overscroll-contain pr-0.5 [-webkit-overflow-scrolling:touch]">
                       {selectedSeatIds.map((id) => (
                         <li
@@ -313,8 +346,32 @@ export function BookingSidePanel({
                               {formatSeatLineUk(id)}
                             </span>
                           </span>
-                          <span className="shrink-0 tabular-nums font-semibold text-slate-700">
-                            {priceForSeatOnDate(id, visitDateKey).toLocaleString("uk-UA")} ₴
+                          <span className="flex shrink-0 items-center gap-2">
+                            {specialPrices ? (
+                              <label className="flex cursor-pointer select-none items-center gap-1.5 text-[11px] font-semibold text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={!!childSeats[id]}
+                                  onChange={() =>
+                                    setChildSeats((prev) => ({
+                                      ...prev,
+                                      [id]: !prev[id],
+                                    }))
+                                  }
+                                  className="h-4 w-4 shrink-0 cursor-pointer accent-teal-700"
+                                />
+                                Дитячий
+                              </label>
+                            ) : null}
+                            <span className="tabular-nums font-semibold text-slate-700">
+                              {(specialPrices
+                                ? childSeats[id]
+                                  ? specialPrices.childUah
+                                  : specialPrices.adultUah
+                                : priceForSeatOnDate(id, visitDateKey)
+                              ).toLocaleString("uk-UA")}{" "}
+                              ₴
+                            </span>
                           </span>
                         </li>
                       ))}
@@ -324,7 +381,7 @@ export function BookingSidePanel({
                         Загальна ціна
                       </span>
                       <span className="text-[15px] font-semibold tabular-nums text-slate-900">
-                        {seatsTotalUah.toLocaleString("uk-UA", {
+                        {effectiveTotalUah.toLocaleString("uk-UA", {
                           style: "currency",
                           currency: "UAH",
                           maximumFractionDigits: 0,

@@ -4,7 +4,7 @@ import { loadOccupiedSeatIdsForVisitDay } from "@/lib/booking/load-occupied-seat
 import { claimSeatHoldsForPayment, releaseSeatHolds } from "@/lib/booking/seat-holds";
 import { createMonobankInvoice, isMonobankConfigured } from "@/lib/payments/monobank";
 import { publicSiteBaseUrl } from "@/lib/site-url";
-import { sumSeatPricesForDate } from "@/lib/pool/seat-pricing";
+import { sumBookingPriceUah } from "@/lib/pool/seat-pricing";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -22,7 +22,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   }
 
-  const { visitDate, visitDateKey, seatIds, fullName, phone, email, details } = parsed.data;
+  const { visitDate, visitDateKey, seatIds, childSeatIds, fullName, phone, email, details } =
+    parsed.data;
 
   // Id вкладки покупця (щоб дозволити захват ЙОГО ж холдів на час оплати).
   // parseBookingCommonBody його відкидає, тому читаємо з raw окремо.
@@ -99,7 +100,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const totalUah = sumSeatPricesForDate(seatIds, visitDateKey);
+  const totalUah = sumBookingPriceUah(seatIds, childSeatIds, visitDateKey);
   // Monobank не приймає суму меншу за 1 грн.
   const amountKopiyky = Math.max(100, Math.round(totalUah * 100));
 
@@ -143,6 +144,7 @@ export async function POST(req: Request) {
             source: "monobank_invoice_create",
             visitDateKey,
             seatIds,
+            ...(childSeatIds.length ? { childSeatIds } : {}),
             amountKopiyky,
             invoiceId,
           },

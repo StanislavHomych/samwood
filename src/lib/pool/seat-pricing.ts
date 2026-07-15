@@ -7,6 +7,25 @@ import { parseVisitDateKey } from "@/lib/dates/visit-date-key";
 export const LOUNGER_PRICE_WEEKDAY_UAH = 700; // Пн–Чт
 export const LOUNGER_PRICE_WEEKEND_UAH = 800; // Пт–Нд
 
+/**
+ * Дні зі спец-тарифом «вхід»: кожен лежак — дорослий або дитячий.
+ * Після цих дат мапа просто перестає збігатися — повертається звичайний тариф.
+ */
+export const SPECIAL_ENTRY_DAYS: Record<
+  string,
+  { adultUah: number; childUah: number }
+> = {
+  "2026-07-15": { adultUah: 500, childUah: 300 },
+  "2026-07-16": { adultUah: 500, childUah: 300 },
+};
+
+/** Спец-тариф дня або null, якщо день звичайний. */
+export function specialEntryPricesForVisit(
+  visitDateKey: string,
+): { adultUah: number; childUah: number } | null {
+  return SPECIAL_ENTRY_DAYS[visitDateKey] ?? null;
+}
+
 /** Пт/Сб/Нд за календарним днем візиту (UTC — як зберігаються дати візиту). */
 export function isWeekendVisitKey(visitDateKey: string): boolean {
   const d = parseVisitDateKey(visitDateKey);
@@ -15,8 +34,10 @@ export function isWeekendVisitKey(visitDateKey: string): boolean {
   return dow === 0 || dow === 5 || dow === 6;
 }
 
-/** Ціна лежака на конкретний день візиту (`YYYY-MM-DD`). */
+/** Ціна лежака на конкретний день візиту (`YYYY-MM-DD`). У спец-дні — дорослий тариф. */
 export function loungerPriceForVisit(visitDateKey: string): number {
+  const special = specialEntryPricesForVisit(visitDateKey);
+  if (special) return special.adultUah;
   return isWeekendVisitKey(visitDateKey)
     ? LOUNGER_PRICE_WEEKEND_UAH
     : LOUNGER_PRICE_WEEKDAY_UAH;
@@ -30,6 +51,25 @@ export function priceForSeatOnDate(_seatId: string, visitDateKey: string): numbe
 /** Сума за обрані місця на день візиту. */
 export function sumSeatPricesForDate(seatIds: string[], visitDateKey: string): number {
   return seatIds.length * loungerPriceForVisit(visitDateKey);
+}
+
+/**
+ * Сума з урахуванням дитячих місць. Дитячий тариф діє ЛИШЕ у спец-дні
+ * (`SPECIAL_ENTRY_DAYS`); у звичайні дні `childSeatIds` ігнорується.
+ */
+export function sumBookingPriceUah(
+  seatIds: string[],
+  childSeatIds: string[],
+  visitDateKey: string,
+): number {
+  const special = specialEntryPricesForVisit(visitDateKey);
+  if (!special) return sumSeatPricesForDate(seatIds, visitDateKey);
+  const childSet = new Set(childSeatIds);
+  let sum = 0;
+  for (const id of seatIds) {
+    sum += childSet.has(id) ? special.childUah : special.adultUah;
+  }
+  return sum;
 }
 
 /** Підпис рядка в кошику / боковій панелі (укр.). */
