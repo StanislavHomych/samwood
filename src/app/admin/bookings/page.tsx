@@ -20,7 +20,7 @@ type PageProps = {
   searchParams: Promise<{ date?: string; payment?: string }>;
 };
 
-const PAYMENT_FILTER_VALUES = ["cash", "on_site", "monobank"] as const;
+const PAYMENT_FILTER_VALUES = ["cash", "on_site", "monobank", "admin"] as const;
 type PaymentFilterValue = (typeof PAYMENT_FILTER_VALUES)[number];
 
 function isPaymentFilterValue(s: string): s is PaymentFilterValue {
@@ -32,6 +32,7 @@ function labelPayment(m: string) {
     cash: "Готівка",
     on_site: "Термінал / на місці",
     monobank: "Monobank",
+    admin: "Бронь адмін (без оплати)",
   };
   return map[m] ?? m;
 }
@@ -41,6 +42,7 @@ function labelPaymentStatus(s: string | null) {
   const map: Record<string, string> = {
     paid: "Оплачено",
     requested: "Очікує",
+    none: "Без оплати",
   };
   return map[s] ?? s;
 }
@@ -51,6 +53,8 @@ function paymentStatusBadge(s: string | null): string {
     return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (s === "requested")
     return "border-amber-200 bg-amber-50 text-amber-800";
+  if (s === "none")
+    return "border-sky-200 bg-sky-50 text-sky-800";
   return "border-zinc-200 bg-zinc-50 text-zinc-600";
 }
 
@@ -170,13 +174,21 @@ export default async function AdminBookingsPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-8 font-[family-name:var(--font-montserrat)]">
       <div className="space-y-4 border-b border-zinc-200 pb-6">
-        <div>
-          <h1 className="font-[family-name:var(--font-cormorant)] text-3xl font-semibold text-zinc-900">
-            Заявки на бронювання
-          </h1>
-          <p className="mt-1 text-sm font-medium text-zinc-600">
-            Таблиця з бази. Можна фільтрувати за датою візиту та способом оплати.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="font-[family-name:var(--font-cormorant)] text-3xl font-semibold text-zinc-900">
+              Заявки на бронювання
+            </h1>
+            <p className="mt-1 text-sm font-medium text-zinc-600">
+              Таблиця з бази. Можна фільтрувати за датою візиту та способом оплати.
+            </p>
+          </div>
+          <a
+            href="/admin/bookings/new"
+            className="shrink-0 rounded-full bg-teal-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800"
+          >
+            + Нова бронь без оплати
+          </a>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
