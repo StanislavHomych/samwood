@@ -40,18 +40,24 @@ type CashBookingInput = {
   fullName: string;
   phone: string;
   email: string | null;
-  paymentMethod: "cash" | "on_site";
+  /** `cash`/`on_site` — заявка з фронту; `admin` — ручна бронь адмінки без оплати. */
+  paymentMethod: "cash" | "on_site" | "admin";
   amountKopiyky: number;
   details: string | null;
   seatIds: string[];
   /** Місця з дитячим тарифом (спец-дні). */
   childSeatIds?: string[];
+  /**
+   * Статус оплати рядка. За замовчуванням `requested` (очікує оплати на місці).
+   * Для адмін-броні без оплати передаємо `none`.
+   */
+  paymentStatus?: string;
 };
 
 /**
- * Атомарно створює заявку (готівка/на місці) + займає місця в `seat_bookings`
- * в одній транзакції. Якщо хоч одне місце вже зайняте — кидає SeatConflictError,
- * і НІЧОГО не записується (rollback).
+ * Атомарно створює заявку (готівка/на місці/адмін-бронь) + займає місця в
+ * `seat_bookings` в одній транзакції. Якщо хоч одне місце вже зайняте — кидає
+ * SeatConflictError, і НІЧОГО не записується (rollback).
  */
 export async function createConfirmedBookingWithSeats(
   ds: DataSource,
@@ -63,6 +69,7 @@ export async function createConfirmedBookingWithSeats(
   const payloadJson = input.childSeatIds?.length
     ? JSON.stringify({ childSeatIds: input.childSeatIds })
     : null;
+  const paymentStatus = input.paymentStatus ?? "requested";
   const qr = ds.createQueryRunner();
   await qr.connect();
   await qr.startTransaction();
@@ -73,7 +80,7 @@ export async function createConfirmedBookingWithSeats(
          ("visitDate", "fullName", "phone", "email", "paymentMethod", "paymentStatus",
           "amountKopiyky", "paidAt", "details", "seatsJson",
           "monobankInvoiceId", "paymentPayloadJson")
-       VALUES ($1, $2, $3, $4, $5, 'requested', $6, NULL, $7, $8::jsonb, NULL, $9::jsonb)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, $9::jsonb, NULL, $10::jsonb)
        RETURNING "id"`,
       [
         input.visitDate,
@@ -81,6 +88,7 @@ export async function createConfirmedBookingWithSeats(
         input.phone,
         input.email,
         input.paymentMethod,
+        paymentStatus,
         input.amountKopiyky,
         input.details,
         seatsJson,

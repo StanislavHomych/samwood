@@ -17,6 +17,8 @@ export const SPECIAL_ENTRY_DAYS: Record<
 > = {
   "2026-07-15": { adultUah: 500, childUah: 300 },
   "2026-07-16": { adultUah: 500, childUah: 300 },
+  "2026-07-17": { adultUah: 500, childUah: 300 },
+  "2026-07-18": { adultUah: 500, childUah: 300 },
 };
 
 /** Спец-тариф дня або null, якщо день звичайний. */
@@ -44,12 +46,18 @@ export function loungerPriceForVisit(visitDateKey: string): number {
 }
 
 /** Ціна конкретного місця на день візиту (наразі всі місця — лежаки). */
-export function priceForSeatOnDate(_seatId: string, visitDateKey: string): number {
+export function priceForSeatOnDate(
+  _seatId: string,
+  visitDateKey: string,
+): number {
   return loungerPriceForVisit(visitDateKey);
 }
 
 /** Сума за обрані місця на день візиту. */
-export function sumSeatPricesForDate(seatIds: string[], visitDateKey: string): number {
+export function sumSeatPricesForDate(
+  seatIds: string[],
+  visitDateKey: string,
+): number {
   return seatIds.length * loungerPriceForVisit(visitDateKey);
 }
 

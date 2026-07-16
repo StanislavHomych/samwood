@@ -48,10 +48,37 @@ function createDataSource(): DataSource {
   });
 }
 
+/**
+ * Чи має закешований DataSource метадані САМЕ для поточних класів ентіті.
+ *
+ * У Next dev (HMR/Turbopack) модуль ентіті може перезавантажитись і отримати нову
+ * ідентичність класу, тоді як у `globalThis` лежить DataSource зі старою — і будь-який
+ * `createQueryBuilder`/`getRepository` падає з `No metadata for "BookingRequest"`.
+ *
+ * Перевіряємо строго за ідентичністю класу через `entityMetadatasMap` (Map з ключем-класом).
+ * НЕ через `ds.hasMetadata()` — той має fallback-пошук за іменем класу і повернув би `true`
+ * навіть для застарілого DS, не виявивши розсинхрон.
+ *
+ * У проді HMR немає: DataSource будується один раз рівно з цими класами, тож ключі в мапі —
+ * ті самі об'єкти → завжди `true`, а гілка перебудови нижче ніколи не виконується.
+ */
+function hasFreshMetadata(ds: DataSource): boolean {
+  return (
+    ds.entityMetadatasMap.has(BookingRequestEntity) &&
+    ds.entityMetadatasMap.has(SeatHoldEntity)
+  );
+}
+
 /** Один DataSource на процес (важливо для Next dev / hot reload). */
 export async function getDataSource(): Promise<DataSource> {
   const existing = globalForDb.__typeormDataSource;
-  if (existing?.isInitialized) return existing;
+  if (existing?.isInitialized && hasFreshMetadata(existing)) return existing;
+
+  // Застарілий після HMR DataSource — закриваємо й будуємо заново з поточними класами.
+  if (existing?.isInitialized && !hasFreshMetadata(existing)) {
+    globalForDb.__typeormDataSource = undefined;
+    await existing.destroy().catch(() => {});
+  }
 
   if (!initPromise) {
     initPromise = (async () => {
