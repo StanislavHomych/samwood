@@ -62,23 +62,53 @@ export function sumSeatPricesForDate(
   return seatIds.length * loungerPriceForVisit(visitDateKey);
 }
 
+/** Один рядок кошика бронювання: місце + його ціна на день візиту. */
+export type BookingPriceLine = {
+  seatId: string;
+  priceUah: number;
+  /** Дитячий тариф (можливий лише у спец-дні). */
+  isChild: boolean;
+};
+
 /**
- * Сума з урахуванням дитячих місць. Дитячий тариф діє ЛИШЕ у спец-дні
- * (`SPECIAL_ENTRY_DAYS`); у звичайні дні `childSeatIds` ігнорується.
+ * Порядкові рядки ціни за кожне обране місце. Дитячий тариф діє ЛИШЕ у
+ * спец-дні (`SPECIAL_ENTRY_DAYS`); у звичайні дні `childSeatIds` ігнорується.
+ * Єдине джерело правди для суми браку і кошика фіскалізації Monobank.
+ */
+export function bookingPriceLines(
+  seatIds: string[],
+  childSeatIds: string[],
+  visitDateKey: string,
+): BookingPriceLine[] {
+  const special = specialEntryPricesForVisit(visitDateKey);
+  if (!special) {
+    const price = loungerPriceForVisit(visitDateKey);
+    return seatIds.map((seatId) => ({ seatId, priceUah: price, isChild: false }));
+  }
+  const childSet = new Set(childSeatIds);
+  return seatIds.map((seatId) => {
+    const isChild = childSet.has(seatId);
+    return {
+      seatId,
+      priceUah: isChild ? special.childUah : special.adultUah,
+      isChild,
+    };
+  });
+}
+
+/**
+ * Сума з урахуванням дитячих місць — рахується з тих самих рядків, що й
+ * кошик Monobank, тож сума інвойсу і basketOrder ніколи не розходяться.
  */
 export function sumBookingPriceUah(
   seatIds: string[],
   childSeatIds: string[],
   visitDateKey: string,
 ): number {
-  const special = specialEntryPricesForVisit(visitDateKey);
-  if (!special) return sumSeatPricesForDate(seatIds, visitDateKey);
-  const childSet = new Set(childSeatIds);
-  let sum = 0;
-  for (const id of seatIds) {
-    sum += childSet.has(id) ? special.childUah : special.adultUah;
-  }
-  return sum;
+  return bookingPriceLines(seatIds, childSeatIds, visitDateKey).reduce(
+    (sum, line) => sum + line.priceUah,
+    0,
+  );
 }
 
 /** Підпис рядка в кошику / боковій панелі (укр.). */

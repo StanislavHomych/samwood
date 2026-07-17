@@ -22,6 +22,26 @@ export function isMonobankConfigured(): boolean {
   return Boolean(monobankToken());
 }
 
+/**
+ * Позиція кошика (`merchantPaymInfo.basketOrder`). ОБОВ'ЯЗКОВА, якщо на
+ * мерчанті ввімкнена фіскалізація (ПРРО) або спліт-платежі — без неї
+ * invoice/create падає з «'basketOrder' cannot be empty».
+ */
+export type MonobankBasketItem = {
+  /** Назва товару/послуги (видно в чеку). */
+  name: string;
+  /** Кількість. */
+  qty: number;
+  /** Ціна за одиницю в копійках. */
+  sum: number;
+  /** Загальна вартість позиції в копійках (qty × sum). */
+  total: number;
+  /** Код товару в системі мерчанта (потрібен для фіскалізації). */
+  code: string;
+  /** Одиниця виміру (напр. «шт.»). */
+  unit?: string;
+};
+
 export type MonobankCreateInvoiceInput = {
   /** Сума в копійках (ціле число, UAH). */
   amountKopiyky: number;
@@ -33,6 +53,11 @@ export type MonobankCreateInvoiceInput = {
   redirectUrl: string;
   /** Опційно: POST webhook при зміні статусу (крім `expired`). */
   webHookUrl?: string;
+  /**
+   * Кошик позицій для фіскального чека. Сума `total` всіх позицій має
+   * дорівнювати `amountKopiyky`, інакше Monobank відхилить інвойс.
+   */
+  basketOrder?: MonobankBasketItem[];
 };
 
 export type MonobankCreateInvoiceResult = {
@@ -66,14 +91,35 @@ export async function createMonobankInvoice(
 
   const url = `${monobankApiBase()}/api/merchant/invoice/create`;
 
+  const merchantPaymInfo: Record<string, unknown> = {
+    reference: input.reference.slice(0, 128),
+    destination: input.destination.slice(0, 128),
+  };
+
+  if (input.basketOrder?.length) {
+    const basketTotal = input.basketOrder.reduce((s, it) => s + it.total, 0);
+    if (basketTotal !== amount) {
+      // Розбіжність кошика й суми Monobank відхиляє — краще впасти з ясною
+      // помилкою в нас, ніж з криптичною від банку.
+      throw new Error(
+        `Monobank basketOrder: сума позицій (${basketTotal}) ≠ amount (${amount}).`,
+      );
+    }
+    merchantPaymInfo.basketOrder = input.basketOrder.map((it) => ({
+      name: it.name.slice(0, 128),
+      qty: it.qty,
+      sum: it.sum,
+      total: it.total,
+      code: it.code.slice(0, 64),
+      ...(it.unit ? { unit: it.unit } : {}),
+    }));
+  }
+
   const body: Record<string, unknown> = {
     amount,
     ccy: 980,
     redirectUrl: input.redirectUrl,
-    merchantPaymInfo: {
-      reference: input.reference.slice(0, 128),
-      destination: input.destination.slice(0, 128),
-    },
+    merchantPaymInfo,
   };
 
   if (input.webHookUrl?.trim()) {

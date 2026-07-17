@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { parseBookingCommonBody } from "@/lib/booking/parse-booking-common-body";
 import { loadOccupiedSeatIdsForVisitDay } from "@/lib/booking/load-occupied-seat-ids";
 import { claimSeatHoldsForPayment, releaseSeatHolds } from "@/lib/booking/seat-holds";
-import { createMonobankInvoice, isMonobankConfigured } from "@/lib/payments/monobank";
+import {
+  createMonobankInvoice,
+  isMonobankConfigured,
+  type MonobankBasketItem,
+} from "@/lib/payments/monobank";
 import { publicSiteBaseUrl } from "@/lib/site-url";
-import { sumBookingPriceUah } from "@/lib/pool/seat-pricing";
+import { bookingPriceLines, formatSeatLineUk } from "@/lib/pool/seat-pricing";
 import { getBookingRequestRepository, getDataSource } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -100,9 +104,32 @@ export async function POST(req: Request) {
     }
   }
 
-  const totalUah = sumBookingPriceUah(seatIds, childSeatIds, visitDateKey);
+  // Порядкові ціни за кожне місце — з них рахуємо і суму, і кошик
+  // фіскалізації, тож розійтися вони не можуть.
+  const priceLines = bookingPriceLines(seatIds, childSeatIds, visitDateKey);
+  const linesTotalKopiyky = priceLines.reduce(
+    (s, l) => s + Math.round(l.priceUah * 100),
+    0,
+  );
   // Monobank не приймає суму меншу за 1 грн.
-  const amountKopiyky = Math.max(100, Math.round(totalUah * 100));
+  const amountKopiyky = Math.max(100, linesTotalKopiyky);
+
+  // Кошик позицій (обов'язковий при увімкненій фіскалізації/ПРРО на мерчанті).
+  const basketOrder: MonobankBasketItem[] = priceLines.map((l) => ({
+    name: `${formatSeatLineUk(l.seatId)}, ${visitDateKey}${l.isChild ? " (дитячий)" : ""}`,
+    qty: 1,
+    sum: Math.round(l.priceUah * 100),
+    total: Math.round(l.priceUah * 100),
+    code: `${l.seatId}${l.isChild ? "-child" : ""}`,
+    unit: "шт.",
+  }));
+  // Якщо суму піднято до мінімуму 1 грн (вироджений випадок) — вирівнюємо
+  // першу позицію, бо кошик має точно збігатися з amount.
+  if (amountKopiyky !== linesTotalKopiyky && basketOrder.length > 0) {
+    const diff = amountKopiyky - linesTotalKopiyky;
+    basketOrder[0].sum += diff;
+    basketOrder[0].total += diff;
+  }
 
   const base = publicSiteBaseUrl();
   const redirectUrl = `${base}/bron/pay-return`;
@@ -120,6 +147,7 @@ export async function POST(req: Request) {
       destination,
       redirectUrl,
       webHookUrl: webhook || undefined,
+      basketOrder,
     });
 
     try {
