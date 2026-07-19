@@ -229,6 +229,117 @@ export async function getMonobankInvoiceStatus(
   };
 }
 
+/** Тип фіскального чека (продаж/повернення). */
+export type MonobankFiscalCheckType = "sale" | "return";
+
+/** Статус фіскалізації чека. `done` — чек сформовано. */
+export type MonobankFiscalCheckStatus =
+  | "new"
+  | "process"
+  | "done"
+  | "failed";
+
+export type MonobankFiscalCheck = {
+  id: string;
+  type: MonobankFiscalCheckType;
+  status: MonobankFiscalCheckStatus;
+  /** Пояснення статусу (напр. причина `failed`). */
+  statusDescription?: string;
+  /** Посилання на офіційний чек (cabinet.tax.gov.ua) — з'являється, коли `done`. */
+  taxUrl?: string;
+  /** PDF чека у base64 (поле `file`) — з'являється, коли `done`. */
+  file?: string;
+  /** Джерело фіскалізації (`checkbox`, `monopay`, ...). */
+  fiscalizationSource?: string;
+};
+
+export type MonobankFiscalChecksResult = {
+  checks: MonobankFiscalCheck[];
+  /** Повне тіло відповіді — для аудиту в paymentPayloadJson. */
+  raw: Record<string, unknown>;
+};
+
+/**
+ * GET `/api/merchant/invoice/fiscal-checks?invoiceId=...` — фіскальні чеки
+ * інвойсу та їх статуси. Працює лише коли на мерчанті активна зв'язка з ПРРО
+ * (Checkbox) у веб-кабінеті. Фіскалізація асинхронна: одразу після оплати чек
+ * може бути ще `new`/`process` (без `taxUrl`/`file`).
+ */
+export async function getMonobankFiscalChecks(
+  invoiceId: string,
+): Promise<MonobankFiscalChecksResult> {
+  const token = monobankToken();
+  if (!token) {
+    throw new Error("MONOBANK_TOKEN не задано. Додайте токен у .env.local (лише на сервері).");
+  }
+
+  const url = `${monobankApiBase()}/api/merchant/invoice/fiscal-checks?invoiceId=${encodeURIComponent(invoiceId)}`;
+  const res = await fetch(url, {
+    headers: { "X-Token": token },
+    cache: "no-store",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch {
+    parsed = {};
+  }
+
+  if (!res.ok) {
+    const err = parsed as MonobankErrorBody;
+    const msg = err.errText || err.message || err.errCode || raw || `HTTP ${res.status}`;
+    throw new Error(`Monobank: ${msg}`);
+  }
+
+  const data = parsed as Record<string, unknown>;
+  const rawChecks = Array.isArray(data.checks) ? data.checks : [];
+  const checks: MonobankFiscalCheck[] = rawChecks
+    .filter((c): c is Record<string, unknown> => typeof c === "object" && c !== null)
+    .map((c) => ({
+      id: typeof c.id === "string" ? c.id : "",
+      type: c.type === "return" ? "return" : "sale",
+      status: (["new", "process", "done", "failed"] as const).includes(
+        c.status as MonobankFiscalCheckStatus,
+      )
+        ? (c.status as MonobankFiscalCheckStatus)
+        : "new",
+      statusDescription:
+        typeof c.statusDescription === "string" ? c.statusDescription : undefined,
+      taxUrl: typeof c.taxUrl === "string" && c.taxUrl ? c.taxUrl : undefined,
+      file: typeof c.file === "string" && c.file ? c.file : undefined,
+      fiscalizationSource:
+        typeof c.fiscalizationSource === "string" ? c.fiscalizationSource : undefined,
+    }));
+
+  return { checks, raw: data };
+}
+
+/**
+ * Найрелевантніший чек продажу для показу клієнту: спершу готовий (`done`),
+ * інакше — перший чек продажу (щоб показати статус «формується»).
+ */
+export function pickPrimarySaleCheck(
+  checks: MonobankFiscalCheck[],
+): MonobankFiscalCheck | null {
+  const sales = checks.filter((c) => c.type === "sale");
+  return sales.find((c) => c.status === "done") ?? sales[0] ?? null;
+}
+
+/**
+ * Полегшена версія чеків для збереження в БД (`paymentPayloadJson`): без важкого
+ * base64 `file`, лише метадані (id/status/taxUrl тощо). PDF клієнт отримує свіжим
+ * з відповіді API, а в базі його тримати не треба — інакше роздуває рядки.
+ */
+export function fiscalChecksForAudit(
+  checks: MonobankFiscalCheck[],
+): { checks: Omit<MonobankFiscalCheck, "file">[] } {
+  return {
+    checks: checks.map(({ file: _file, ...rest }) => rest),
+  };
+}
+
 let cachedPubKeyPem: string | null = null;
 
 /**

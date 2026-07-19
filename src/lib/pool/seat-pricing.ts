@@ -20,6 +20,21 @@ export const SPECIAL_ENTRY_DAYS: Record<
   "2026-07-17": { adultUah: 500, childUah: 300 },
   "2026-07-18": { adultUah: 500, childUah: 300 },
   "2026-07-19": { adultUah: 500, childUah: 300 },
+  "2026-07-20": { adultUah: 500, childUah: 300 },
+  "2026-07-21": { adultUah: 500, childUah: 300 },
+  "2026-07-22": { adultUah: 500, childUah: 300 },
+  "2026-07-23": { adultUah: 500, childUah: 300 },
+  "2026-07-24": { adultUah: 500, childUah: 300 },
+  "2026-07-25": { adultUah: 500, childUah: 300 },
+  "2026-07-26": { adultUah: 500, childUah: 300 },
+  "2026-07-27": { adultUah: 500, childUah: 300 },
+  "2026-07-28": { adultUah: 500, childUah: 300 },
+  "2026-07-29": { adultUah: 500, childUah: 300 },
+  "2026-07-30": { adultUah: 500, childUah: 300 },
+  "2026-07-31": { adultUah: 500, childUah: 300 },
+  "2026-08-01": { adultUah: 500, childUah: 300 },
+  "2026-08-02": { adultUah: 500, childUah: 300 },
+  "2026-12-31": { adultUah: 1, childUah: 1 },
 };
 
 /** Спец-тариф дня або null, якщо день звичайний. */

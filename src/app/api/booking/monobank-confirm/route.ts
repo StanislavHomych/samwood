@@ -6,7 +6,14 @@ import { claimSeatsForPaidBooking } from "@/lib/booking/seat-bookings";
 import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-email";
 import { releaseHoldsForSeats } from "@/lib/booking/seat-holds";
 import { isAllowedPoolSeatId, MAX_SEATS_PER_BOOKING } from "@/lib/booking/seat-id";
-import { getMonobankInvoiceStatus, isMonobankConfigured } from "@/lib/payments/monobank";
+import {
+  fiscalChecksForAudit,
+  getMonobankFiscalChecks,
+  getMonobankInvoiceStatus,
+  isMonobankConfigured,
+  pickPrimarySaleCheck,
+  type MonobankFiscalCheck,
+} from "@/lib/payments/monobank";
 import { sumBookingPriceUah } from "@/lib/pool/seat-pricing";
 import { z } from "zod";
 
@@ -27,6 +34,23 @@ function amountMismatchFlag(
     paidKopiyky,
   });
   return { amountMismatch: { expectedKopiyky, paidKopiyky } };
+}
+
+/**
+ * Фіскальний чек Monobank/Checkbox інвойсу. Фіскалізація асинхронна, тож одразу
+ * після оплати чека може ще не бути — тоді повертаємо null і клієнт спробує ще.
+ * Помилку запиту ковтаємо: оплата вже підтверджена, чек — вторинне.
+ */
+async function loadFiscalCheck(
+  invoiceId: string,
+): Promise<{ check: MonobankFiscalCheck | null; audit: Record<string, unknown> } | null> {
+  try {
+    const { checks } = await getMonobankFiscalChecks(invoiceId);
+    return { check: pickPrimarySaleCheck(checks), audit: fiscalChecksForAudit(checks) };
+  } catch (e) {
+    console.error("[monobank-confirm] fiscal-checks failed", e);
+    return null;
+  }
 }
 
 /** Дитячі місця зі збереженого payload (masked unknown → string[]). */
@@ -156,10 +180,12 @@ export async function POST(req: Request) {
         seatsToClaim,
       );
 
+      const fiscal = await loadFiscalCheck(invoice.invoiceId);
       existing.paymentPayloadJson = {
         ...(existing.paymentPayloadJson ?? {}),
         source: "pay_return_client_verified",
         monobankStatus: invoice.raw,
+        ...(fiscal ? { fiscalChecks: fiscal.audit } : {}),
         ...(conflicted.length ? { seatConflicts: conflicted } : {}),
         ...(amountMismatchFlag(verifiedAmountKopiyky, expectedKopiyky) ?? {}),
       };
@@ -193,6 +219,7 @@ export async function POST(req: Request) {
         id: existing.id,
         updated: true,
         seatConflicts: conflicted,
+        fiscalCheck: fiscal?.check ?? null,
       });
     }
 
@@ -236,10 +263,12 @@ export async function POST(req: Request) {
       body.visitDateKey,
       seatIds,
     );
-    if (conflicted.length) {
+    const fiscal = await loadFiscalCheck(invoice.invoiceId);
+    if (conflicted.length || fiscal) {
       row.paymentPayloadJson = {
         ...(row.paymentPayloadJson ?? {}),
-        seatConflicts: conflicted,
+        ...(fiscal ? { fiscalChecks: fiscal.audit } : {}),
+        ...(conflicted.length ? { seatConflicts: conflicted } : {}),
       };
       await repo.save(row);
     }
@@ -267,7 +296,12 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({ ok: true, id: row.id, seatConflicts: conflicted });
+    return NextResponse.json({
+      ok: true,
+      id: row.id,
+      seatConflicts: conflicted,
+      fiscalCheck: fiscal?.check ?? null,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "db_error";
     return NextResponse.json(

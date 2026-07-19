@@ -6,6 +6,8 @@ import { deliverBookingConfirmationOnce } from "@/lib/booking/send-confirmation-
 import { sumBookingPriceUah } from "@/lib/pool/seat-pricing";
 import { formatVisitDateKey } from "@/lib/dates/visit-date-key";
 import {
+  fiscalChecksForAudit,
+  getMonobankFiscalChecks,
   isMonobankConfigured,
   verifyMonobankWebhookSignature,
   type MonobankInvoiceStatus,
@@ -109,6 +111,18 @@ export async function POST(req: Request) {
         ({ conflicted } = await claimSeatsForPaidBooking(ds, row.id, rowKey, rowSeatIds));
       }
     }
+
+    // Фіскальний чек (Checkbox/ПРРО) — вторинне, помилку ковтаємо.
+    // Зберігаємо лише метадані (без важкого base64 PDF).
+    let fiscalChecksAudit: Record<string, unknown> | undefined;
+    if (status === "success") {
+      try {
+        const { checks } = await getMonobankFiscalChecks(invoiceId);
+        fiscalChecksAudit = fiscalChecksForAudit(checks);
+      } catch (e) {
+        console.error("[monobank-webhook] fiscal-checks failed", e);
+      }
+    }
     // Звірка оплаченої суми з очікуваною (defense-in-depth) — лише аудит-флаг.
     let amountMismatch:
       | { expectedKopiyky: number; paidKopiyky: number }
@@ -129,6 +143,7 @@ export async function POST(req: Request) {
       ...(row.paymentPayloadJson ?? {}),
       source: "monobank_webhook",
       webhook: payload,
+      ...(fiscalChecksAudit ? { fiscalChecks: fiscalChecksAudit } : {}),
       ...(conflicted.length ? { seatConflicts: conflicted } : {}),
       ...(amountMismatch ? { amountMismatch } : {}),
     };
