@@ -34,6 +34,7 @@ export const SPECIAL_ENTRY_DAYS: Record<
   "2026-07-31": { adultUah: 500, childUah: 300 },
   "2026-08-01": { adultUah: 500, childUah: 300 },
   "2026-08-02": { adultUah: 500, childUah: 300 },
+  "2026-12-31": { adultUah: 1, childUah: 1 },
 };
 
 /** Спец-тариф дня або null, якщо день звичайний. */
